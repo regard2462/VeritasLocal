@@ -1,0 +1,11 @@
+.gradle/
+build/
+*/build/
+local.properties
+.cxx/
+.idea/
+*.apk
+*.log
+app/src/main/cpp/third_party/llama.cpp/
+desktop/native-libs/
+.kotlin/

@@ -1,0 +1,75 @@
+package com.veritas.localresearch.settings
+
+import android.content.Context
+import com.veritas.localresearch.scraping.SearchEngine
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+/**
+ * Laenge und Ausfuehrlichkeit der Antwort. [tokenFactor] skaliert das Schreibbudget, [extraFacts] die Zahl der
+ * gesuchten Fakten, [sentences] die Satzzahl je Abschnitt; [outline] = Gliederung in Abschnitte.
+ */
+enum class AnswerLength(val label: String, val tokenFactor: Float, val extraFacts: Int, val sentences: String, val outline: Boolean) {
+    SHORT("Kurz", 0.45f, -2, "2 bis 4", false),
+    MEDIUM("Mittel", 1.0f, 0, "3 bis 6", true),
+    LONG("Ausführlich", 1.8f, 4, "5 bis 9", true)
+}
+
+data class AppSettings(
+    val enabledEngines: Set<String> = SearchEngine.entries.filter { it.enabledByDefault }.map { it.id }.toSet(),
+    val searxngUrl: String = "",
+    val useWikipedia: Boolean = true,
+    val useArxiv: Boolean = true,
+    val embeddingPresetId: String = "e5-small-onnx",
+    val defaultDepth: Int = 2,
+    val showTimings: Boolean = true,
+    val useReranker: Boolean = true,
+    val answerLength: AnswerLength = AnswerLength.MEDIUM,
+    val citationStyle: com.veritas.localresearch.export.CitationStyle = com.veritas.localresearch.export.CitationStyle.APA7
+) {
+    fun engines(): List<SearchEngine> = SearchEngine.entries.filter { it.id in enabledEngines }
+}
+
+class SettingsStore(context: Context) {
+    val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    /** Eigene Datei fuer Budgets und Pausen der Suchmaschinen. */
+    val enginePrefs = context.getSharedPreferences("search_engines", Context.MODE_PRIVATE)
+
+    private val _state = MutableStateFlow(load())
+    val state: StateFlow<AppSettings> = _state.asStateFlow()
+    val current: AppSettings get() = _state.value
+
+    private fun load(): AppSettings {
+        val d = AppSettings()
+        return AppSettings(
+            enabledEngines = prefs.getStringSet("engines", null)?.toSet() ?: d.enabledEngines,
+            searxngUrl = prefs.getString("searxng", d.searxngUrl).orEmpty(),
+            useWikipedia = prefs.getBoolean("wikipedia", d.useWikipedia),
+            useArxiv = prefs.getBoolean("arxiv", d.useArxiv),
+            embeddingPresetId = prefs.getString("embedding", d.embeddingPresetId) ?: d.embeddingPresetId,
+            defaultDepth = prefs.getInt("depth", d.defaultDepth).coerceIn(1, 3),
+            showTimings = prefs.getBoolean("timings", d.showTimings),
+            useReranker = prefs.getBoolean("reranker", d.useReranker),
+            answerLength = AnswerLength.entries.firstOrNull { it.name == prefs.getString("length", null) } ?: d.answerLength,
+            citationStyle = com.veritas.localresearch.export.CitationStyle.entries.firstOrNull { it.name == prefs.getString("citation", null) } ?: d.citationStyle
+        )
+    }
+
+    fun update(transform: (AppSettings) -> AppSettings) {
+        val next = transform(_state.value)
+        _state.value = next
+        prefs.edit()
+            .putStringSet("engines", next.enabledEngines)
+            .putString("searxng", next.searxngUrl)
+            .putBoolean("wikipedia", next.useWikipedia)
+            .putBoolean("arxiv", next.useArxiv)
+            .putString("embedding", next.embeddingPresetId)
+            .putInt("depth", next.defaultDepth)
+            .putBoolean("timings", next.showTimings)
+            .putBoolean("reranker", next.useReranker)
+            .putString("length", next.answerLength.name)
+            .putString("citation", next.citationStyle.name)
+            .apply()
+    }
+}

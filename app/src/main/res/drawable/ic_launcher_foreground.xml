@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App-Bild: mehrere Quellen laufen zu einem geprueften Fakt zusammen und bilden das V von VeritasLocal -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M43,33 L54,75 M65,33 L54,75" android:strokeColor="#60A5FA" android:strokeAlpha="0.6"
+        android:strokeWidth="3" android:strokeLineCap="round" />
+    <path android:pathData="M31,36 L54,75 M77,36 L54,75" android:strokeColor="#60A5FA"
+        android:strokeWidth="4.5" android:strokeLineCap="round" />
+    <path android:pathData="M26,36 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" android:fillColor="#FFFFFF" />
+    <path android:pathData="M39,33 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0" android:fillColor="#FFFFFF" />
+    <path android:pathData="M61,33 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0" android:fillColor="#FFFFFF" />
+    <path android:pathData="M72,36 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" android:fillColor="#FFFFFF" />
+    <path android:pathData="M45,75 a9,9 0 1,0 18,0 a9,9 0 1,0 -18,0" android:fillColor="#4ADE80" />
+    <path android:pathData="M50,75 L53,78 L58.5,72" android:strokeColor="#111827" android:strokeWidth="2.5"
+        android:strokeLineCap="round" android:strokeLineJoin="round" />
+</vector>

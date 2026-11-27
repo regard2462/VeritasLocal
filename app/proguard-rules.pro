@@ -1,0 +1,2 @@
+-keep class com.veritas.localresearch.llm.LlamaEngine { *; }
+-keep interface com.veritas.localresearch.llm.TokenCallback { *; }
