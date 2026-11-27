@@ -1,6 +1,8 @@
 package com.veritas.localresearch.settings
 
 import android.content.Context
+import com.veritas.localresearch.i18n.I18n
+import com.veritas.localresearch.i18n.tr
 import com.veritas.localresearch.scraping.SearchEngine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -10,14 +12,20 @@ import kotlinx.coroutines.flow.asStateFlow
  * Laenge und Ausfuehrlichkeit der Antwort. [tokenFactor] skaliert das Schreibbudget, [extraFacts] die Zahl der
  * gesuchten Fakten, [sentences] die Satzzahl je Abschnitt; [outline] = Gliederung in Abschnitte.
  */
-enum class AnswerLength(val label: String, val tokenFactor: Float, val extraFacts: Int, val sentences: String, val outline: Boolean) {
-    SHORT("Kurz", 0.45f, -2, "2 bis 4", false),
-    MEDIUM("Mittel", 1.0f, 0, "3 bis 6", true),
-    LONG("Ausführlich", 1.8f, 4, "5 bis 9", true)
+enum class AnswerLength(private val key: String, val tokenFactor: Float, val extraFacts: Int, val sentences: String, val outline: Boolean) {
+    SHORT("len_short", 0.45f, -2, "2 bis 4", false),
+    MEDIUM("len_medium", 1.0f, 0, "3 bis 6", true),
+    LONG("len_long", 1.8f, 4, "5 bis 9", true);
+
+    val label: String get() = tr(key)
 }
 
 /** Woraus die Antwort kommt: Websuche, eigene Dokumente oder beides. */
-enum class SourceMode(val label: String) { WEB("Web"), DOCS("Dokumente"), BOTH("Beides") }
+enum class SourceMode(private val key: String) {
+    WEB("src_web"), DOCS("src_docs"), BOTH("src_both");
+
+    val label: String get() = tr(key)
+}
 
 data class AppSettings(
     val enabledEngines: Set<String> = SearchEngine.entries.filter { it.enabledByDefault }.map { it.id }.toSet(),
@@ -29,10 +37,14 @@ data class AppSettings(
     val showTimings: Boolean = true,
     val useReranker: Boolean = true,
     val answerLength: AnswerLength = AnswerLength.MEDIUM,
+    /** Selbst festgelegte Laenge der Antwort in Woertern; 0 = Stufe aus [answerLength]. */
+    val answerWords: Int = 0,
     val citationStyle: com.veritas.localresearch.export.CitationStyle = com.veritas.localresearch.export.CitationStyle.APA7,
     val sourceMode: SourceMode = SourceMode.WEB,
     /** Desktop: Modell auf der Grafikkarte rechnen lassen (Vulkan), wenn eine da ist. */
-    val useGpu: Boolean = true
+    val useGpu: Boolean = true,
+    /** Sprache der Oberflaeche als Code (de, en, ...); leer = Systemsprache. */
+    val uiLanguage: String = ""
 ) {
     fun engines(): List<SearchEngine> = SearchEngine.entries.filter { it.id in enabledEngines }
 }
@@ -46,6 +58,10 @@ class SettingsStore(context: Context) {
     val state: StateFlow<AppSettings> = _state.asStateFlow()
     val current: AppSettings get() = _state.value
 
+    init {
+        I18n.setPreference(_state.value.uiLanguage)
+    }
+
     private fun load(): AppSettings {
         val d = AppSettings()
         return AppSettings(
@@ -58,15 +74,18 @@ class SettingsStore(context: Context) {
             showTimings = prefs.getBoolean("timings", d.showTimings),
             useReranker = prefs.getBoolean("reranker", d.useReranker),
             answerLength = AnswerLength.entries.firstOrNull { it.name == prefs.getString("length", null) } ?: d.answerLength,
+            answerWords = prefs.getInt("words", d.answerWords),
             citationStyle = com.veritas.localresearch.export.CitationStyle.entries.firstOrNull { it.name == prefs.getString("citation", null) } ?: d.citationStyle,
             sourceMode = SourceMode.entries.firstOrNull { it.name == prefs.getString("sources", null) } ?: d.sourceMode,
-            useGpu = prefs.getBoolean("gpu", d.useGpu)
+            useGpu = prefs.getBoolean("gpu", d.useGpu),
+            uiLanguage = prefs.getString("ui_lang", d.uiLanguage).orEmpty()
         )
     }
 
     fun update(transform: (AppSettings) -> AppSettings) {
         val next = transform(_state.value)
         _state.value = next
+        I18n.setPreference(next.uiLanguage)
         prefs.edit()
             .putStringSet("engines", next.enabledEngines)
             .putString("searxng", next.searxngUrl)
@@ -77,9 +96,11 @@ class SettingsStore(context: Context) {
             .putBoolean("timings", next.showTimings)
             .putBoolean("reranker", next.useReranker)
             .putString("length", next.answerLength.name)
+            .putInt("words", next.answerWords)
             .putString("citation", next.citationStyle.name)
             .putString("sources", next.sourceMode.name)
             .putBoolean("gpu", next.useGpu)
+            .putString("ui_lang", next.uiLanguage)
             .apply()
     }
 }

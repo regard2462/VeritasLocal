@@ -1,6 +1,7 @@
 package com.veritas.localresearch.docs
 
 import android.content.Context
+import com.veritas.localresearch.i18n.tr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -24,14 +25,15 @@ interface OcrEngine {
 object Ocr {
     @Volatile var engine: OcrEngine? = null
 
-    const val LANGS = "deu+eng"
     const val MAX_PAGES = 2000
 
-    /** Schnelle Tesseract-Sprachdaten (Apache-2.0), zusammen etwa 6 MB. */
-    private val FILES = listOf(
-        "deu.traineddata" to "https://github.com/tesseract-ocr/tessdata_fast/raw/main/deu.traineddata",
-        "eng.traineddata" to "https://github.com/tesseract-ocr/tessdata_fast/raw/main/eng.traineddata"
-    )
+    /** Sprachen der Texterkennung: Sprache der Oberflaeche und Englisch, z. B. "deu+eng" oder "jpn+eng". */
+    val LANGS: String get() = listOf(com.veritas.localresearch.i18n.I18n.current.ocr, "eng").distinct().joinToString("+")
+
+    /** Schnelle Tesseract-Sprachdaten (Apache-2.0), je Sprache wenige MB. */
+    private val FILES: List<Pair<String, String>> get() = LANGS.split('+').map {
+        "$it.traineddata" to "https://github.com/tesseract-ocr/tessdata_fast/raw/main/$it.traineddata"
+    }
 
     /** Ordner, der den Unterordner tessdata enthaelt. */
     fun dataParent(context: Context): File = File(context.filesDir, "ocr")
@@ -45,15 +47,15 @@ object Ocr {
             for ((name, url) in FILES) {
                 val f = File(dir, name)
                 if (f.isFile && f.length() > 100_000) continue
-                onStatus("Lade Sprachdaten für die Texterkennung ($name)…")
+                onStatus(tr("ocr_lang_dl", name))
                 val req = Request.Builder().url(url)
                     .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36")
                     .build()
                 client.newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful) error("Sprachdaten nicht ladbar (HTTP ${resp.code})")
+                    if (!resp.isSuccessful) error(tr("ocr_lang_fail", resp.code))
                     val tmp = File(dir, "$name.part")
                     resp.body!!.byteStream().use { inp -> tmp.outputStream().use { inp.copyTo(it) } }
-                    if (tmp.length() < 100_000) { tmp.delete(); error("Sprachdaten unvollständig") }
+                    if (tmp.length() < 100_000) { tmp.delete(); error(tr("ocr_lang_incomplete")) }
                     if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
                 }
             }

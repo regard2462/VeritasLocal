@@ -97,7 +97,17 @@ class Fts5ChunkStore {
         val lowered = text.lowercase().replace("ß", "ss")
         val folded = Normalizer.normalize(lowered, Normalizer.Form.NFD)
             .replace(DIACRITICS_REGEX, "")
-        return TOKEN_REGEX.findAll(folded).map { stem(it.value) }.filter { it.length >= 2 }.toList()
+        return TOKEN_REGEX.findAll(folded).flatMap { m ->
+            val w = m.value
+            // Chinesisch, Japanisch und Thai schreiben ohne Leerzeichen: dort zaehlen Zeichenpaare als Begriffe
+            if (w.length > 2 && w.any(::unspaced)) w.windowed(2).asSequence() else sequenceOf(stem(w))
+        }.filter { it.length >= 2 }.toList()
+    }
+
+    private fun unspaced(c: Char): Boolean = when (runCatching { Character.UnicodeScript.of(c.code) }.getOrNull()) {
+        Character.UnicodeScript.HAN, Character.UnicodeScript.HIRAGANA, Character.UnicodeScript.KATAKANA,
+        Character.UnicodeScript.THAI -> true
+        else -> false
     }
 
     /** Einfache Grundform: haeufige Endungen ab ("okonomischen" und "okonomische" -> "okonomisch"), Rest mind. 4 Zeichen. */

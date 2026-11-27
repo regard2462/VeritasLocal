@@ -1,6 +1,7 @@
 package com.veritas.localresearch.scraping
 
 import android.content.SharedPreferences
+import com.veritas.localresearch.i18n.tr
 import android.util.Base64
 import com.veritas.localresearch.domain.SearchResultItem
 import kotlinx.serialization.json.Json
@@ -21,18 +22,21 @@ import java.net.URLEncoder
  */
 enum class SearchEngine(
     val id: String,
-    val displayName: String,
+    private val baseName: String,
     /** Hoechstens so viele Anfragen pro Minute. */
     val perMinute: Int,
     val enabledByDefault: Boolean,
-    val note: String
+    private val noteKey: String
 ) {
-    DUCKDUCKGO("ddg", "DuckDuckGo", 4, true, "HTML-Version, sperrt bei vielen schnellen Anfragen"),
-    BING("bing", "Bing", 8, true, "Großer Index, viele PDFs und offizielle Seiten"),
-    STARTPAGE("startpage", "Startpage", 4, true, "Google-Ergebnisse ohne Tracking"),
-    MOJEEK("mojeek", "Mojeek", 4, true, "Eigener Index, zeigt bei VPN-Adressen oft ein Captcha"),
-    MARGINALIA("marginalia", "Marginalia", 3, false, "Kleines, textlastiges Web, öffentlicher API-Schlüssel"),
-    SEARXNG("searxng", "Eigene SearXNG-Instanz", 20, false, "JSON-Ausgabe muss in der Instanz aktiv sein");
+    DUCKDUCKGO("ddg", "DuckDuckGo", 4, true, "eng_ddg"),
+    BING("bing", "Bing", 8, true, "eng_bing"),
+    STARTPAGE("startpage", "Startpage", 4, true, "eng_startpage"),
+    MOJEEK("mojeek", "Mojeek", 4, true, "eng_mojeek"),
+    MARGINALIA("marginalia", "Marginalia", 3, false, "eng_marginalia"),
+    SEARXNG("searxng", "SearXNG", 20, false, "eng_searxng");
+
+    val displayName: String get() = if (this == SEARXNG) tr("eng_searxng_name") else baseName
+    val note: String get() = tr(noteKey)
 
     /** [lang]: Sprache der Frage; Suchmaschinen mit Regions- oder Sprachparameter liefern dann Treffer in dieser Sprache. */
     fun buildUrl(query: String, searxngBase: String, lang: com.veritas.localresearch.domain.LanguageDetector.Language? = null): String? {

@@ -1,6 +1,7 @@
 package com.veritas.localresearch.ui
 
 import androidx.compose.foundation.layout.*
+import com.veritas.localresearch.i18n.tr
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -12,12 +13,14 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import kotlin.math.roundToInt
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ResearchScreen(viewModel: ResearchViewModel) {
     val state by viewModel.uiState.collectAsState()
@@ -30,10 +33,10 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
                         Text("VeritasLocal", fontWeight = FontWeight.Bold)
                         Text(
                             text = buildString {
-                                append(state.loadedLlmName ?: "Kein LLM geladen")
+                                append(state.loadedLlmName ?: tr("no_llm"))
                                 if (state.gpuInUse.isNotEmpty()) append(" • GPU")
                                 append(" • ")
-                                append(if (state.isEmbeddingLoaded) "Hybrid (BM25+ONNX)" else "BM25-Modus")
+                                append(if (state.isEmbeddingLoaded) tr("mode_hybrid") else tr("mode_bm25"))
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -42,10 +45,10 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
                 },
                 actions = {
                     IconButton(onClick = { viewModel.toggleModelManager(true) }) {
-                        Icon(Icons.Default.Memory, contentDescription = "Modelle verwalten")
+                        Icon(Icons.Default.Memory, contentDescription = tr("models"))
                     }
                     IconButton(onClick = { viewModel.toggleSettings(true) }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Einstellungen")
+                        Icon(Icons.Default.Settings, contentDescription = tr("settings"))
                     }
                 }
             )
@@ -61,7 +64,7 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
         ) {
             if (state.isModelLoading) {
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                Text("Lade lokales GGUF-Modell in den RAM…", style = MaterialTheme.typography.bodySmall)
+                Text(tr("loading_model"), style = MaterialTheme.typography.bodySmall)
             }
 
             state.errorMessage?.let { err ->
@@ -72,7 +75,7 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text(err, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.weight(1f))
-                        TextButton(onClick = viewModel::clearError) { Text("OK") }
+                        TextButton(onClick = viewModel::clearError) { Text(tr("ok")) }
                     }
                 }
             }
@@ -84,7 +87,7 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text("Quellen:", style = MaterialTheme.typography.labelMedium)
+                Text(tr("sources_label"), style = MaterialTheme.typography.labelMedium)
                 com.veritas.localresearch.settings.SourceMode.entries.forEach { m ->
                     FilterChip(
                         selected = sourceMode == m,
@@ -104,8 +107,8 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
                 onValueChange = viewModel::onQueryChange,
                 label = {
                     Text(
-                        if (sourceMode == com.veritas.localresearch.settings.SourceMode.DOCS) "Frage zu deinen Dokumenten…"
-                        else "Forschungsfrage stellen (100 % lokal geprüft)…"
+                        if (sourceMode == com.veritas.localresearch.settings.SourceMode.DOCS) tr("hint_docs")
+                        else tr("hint_web")
                     )
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -119,8 +122,8 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text("Tiefe:", style = MaterialTheme.typography.labelMedium)
-                listOf(1 to "Schnell", 2 to "Standard", 3 to "Tief").forEach { (rounds, label) ->
+                Text(tr("depth_label"), style = MaterialTheme.typography.labelMedium)
+                listOf(1 to tr("depth_fast"), 2 to tr("depth_std"), 3 to tr("depth_deep")).forEach { (rounds, label) ->
                     FilterChip(
                         selected = state.maxRounds == rounds,
                         onClick = { viewModel.onMaxRoundsChange(rounds) },
@@ -131,28 +134,53 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
             }
 
             // Laenge und Ausfuehrlichkeit der Antwort (gespeichert in den Einstellungen)
-            val answerLength = viewModel.settingsStore.state.collectAsState().value.answerLength
-            Row(
+            val lengthSettings = viewModel.settingsStore.state.collectAsState().value
+            val answerLength = lengthSettings.answerLength
+            val answerWords = lengthSettings.answerWords
+            FlowRow(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
+                verticalArrangement = Arrangement.Center,
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                Text("Länge:", style = MaterialTheme.typography.labelMedium)
+                Text(tr("length_label"), style = MaterialTheme.typography.labelMedium, modifier = Modifier.align(Alignment.CenterVertically))
                 com.veritas.localresearch.settings.AnswerLength.entries.forEach { len ->
                     FilterChip(
-                        selected = answerLength == len,
-                        onClick = { viewModel.updateSettings { it.copy(answerLength = len) } },
+                        selected = answerWords == 0 && answerLength == len,
+                        onClick = { viewModel.updateSettings { it.copy(answerLength = len, answerWords = 0) } },
                         enabled = !state.progress.isRunning,
                         label = { Text(len.label, maxLines = 1) }
                     )
                 }
+                // Eigene Laenge in Woertern
+                FilterChip(
+                    selected = answerWords > 0,
+                    onClick = { viewModel.updateSettings { it.copy(answerWords = if (it.answerWords > 0) it.answerWords else 1000) } },
+                    enabled = !state.progress.isRunning,
+                    label = { Text(if (answerWords > 0) tr("len_words", answerWords) else tr("len_custom"), maxLines = 1) }
+                )
+            }
+            if (answerWords > 0) {
+                var sliderWords by androidx.compose.runtime.remember(answerWords) { androidx.compose.runtime.mutableFloatStateOf(answerWords.toFloat()) }
+                Slider(
+                    value = sliderWords,
+                    onValueChange = { sliderWords = (it / 100f).roundToInt() * 100f },
+                    onValueChangeFinished = { viewModel.updateSettings { it.copy(answerWords = sliderWords.toInt()) } },
+                    valueRange = com.veritas.localresearch.pipeline.LengthSpec.MIN_WORDS.toFloat()..com.veritas.localresearch.pipeline.LengthSpec.MAX_WORDS.toFloat(),
+                    enabled = !state.progress.isRunning,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    tr("len_hint", sliderWords.toInt()),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
             if (state.progress.isRunning) {
                 FilledTonalButton(onClick = viewModel::stopResearch, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Stop, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
-                    Text("Stop")
+                    Text(tr("stop"))
                 }
             } else {
                 Button(
@@ -162,7 +190,7 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
                 ) {
                     Icon(Icons.Default.Search, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
-                    Text(if (sourceMode == com.veritas.localresearch.settings.SourceMode.DOCS) "Fragen" else "Forschen")
+                    Text(if (sourceMode == com.veritas.localresearch.settings.SourceMode.DOCS) tr("ask") else tr("research"))
                 }
             }
 
@@ -175,7 +203,7 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
             if (state.progress.isRunning && state.streamingDraft.isNotBlank()) {
                 ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Synthese läuft (Zahlen-Check folgt)…", style = MaterialTheme.typography.labelMedium)
+                        Text(tr("synth_running"), style = MaterialTheme.typography.labelMedium)
                         Text(state.streamingDraft.replace("## ", ""), style = MaterialTheme.typography.bodyLarge)
                     }
                 }
@@ -200,7 +228,7 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("Export:", style = MaterialTheme.typography.labelMedium)
+                    Text(tr("export_label"), style = MaterialTheme.typography.labelMedium)
                     launchers.forEach { (f, launcher) ->
                         OutlinedButton(
                             onClick = { launcher.launch(com.veritas.localresearch.export.ExportFormat.fileName(report.question, f)) },
@@ -209,7 +237,7 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
                     }
                 }
                 Text(
-                    "Zitierstil: ${citeStyle.label} (änderbar in den Einstellungen)",
+                    tr("cite_style_info", citeStyle.label),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -217,7 +245,7 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
                 if (showTimings && report.totalMs > 0) {
                     Text(
                         text = buildString {
-                            append("Dauer ${formatSeconds(report.totalMs)}")
+                            append(tr("duration", formatSeconds(report.totalMs)))
                             if (report.modelName.isNotBlank()) append(" • ${report.modelName}")
                             report.stageTimings.forEach { (stage, ms) -> append('\n').append("$stage: ${formatSeconds(ms)}") }
                         },
@@ -243,10 +271,10 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
     state.selectedWarningNumber?.let { warn ->
         AlertDialog(
             onDismissRequest = { viewModel.openNumberWarning(null) },
-            title = { Text("Unbelegte Zahl erkannt") },
-            text = { Text("${warn.reason}\n\nPrüfe diesen Wert unbedingt manuell in den verlinkten Originalquellen.") },
+            title = { Text(tr("warn_title")) },
+            text = { Text(tr("warn_text", warn.reason)) },
             confirmButton = {
-                TextButton(onClick = { viewModel.openNumberWarning(null) }) { Text("Verstanden") }
+                TextButton(onClick = { viewModel.openNumberWarning(null) }) { Text(tr("got_it")) }
             }
         )
     }
@@ -270,6 +298,6 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
 }
 
 private fun formatSeconds(ms: Long): String =
-    if (ms < 10_000) String.format(java.util.Locale.GERMANY, "%.1f s", ms / 1000.0)
+    if (ms < 10_000) String.format(com.veritas.localresearch.i18n.I18n.locale, "%.1f s", ms / 1000.0)
     else if (ms < 120_000) "${ms / 1000} s"
     else "${ms / 60_000} min ${(ms / 1000) % 60} s"

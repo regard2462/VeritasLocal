@@ -262,6 +262,70 @@ class GroundingTest {
     }
 
     @Test
+    fun sameFindingInOtherWordsIsMerged() {
+        val pump = TextChunk(
+            5, "https://www.example.org/wp", "example.org", "Wärmepumpen im Winter",
+            "Messungen im Feld aus dem Jahr 2024 zeigen, dass gute Geräte bei -20 Grad noch 40 bis 55 Prozent ihrer Nennleistung erreichen. " +
+                "Feldmessungen aus dem Jahr 2024 zeigen, dass gute Geräte bei -20 Grad 40 bis 55 Prozent ihrer Nennleistung erreichen " +
+                "und dennoch viel Strom gegenüber einer Heizpatrone sparen.",
+            SourceType.WEB
+        )
+        val all = chunks + (5 to pump)
+        val r = v.verifyClaims(listOf(
+            RawClaimDto("Gute Geräte erreichen bei -20 Grad noch 40 bis 55 Prozent ihrer Nennleistung.",
+                "Messungen im Feld aus dem Jahr 2024 zeigen, dass gute Geräte bei -20 Grad noch 40 bis 55 Prozent ihrer Nennleistung erreichen", 5),
+            RawClaimDto("Gute Geräte sparen bei -20 Grad viel Strom gegenüber einer Heizpatrone.",
+                "und dennoch viel Strom gegenüber einer Heizpatrone sparen", 5)
+        ), all, all.values.toList())
+        val answer = "Messungen im Feld aus dem Jahr 2024 zeigen, dass gute Geräte bei -20 Grad noch 40 bis 55 Prozent ihrer Nennleistung erreichen [1]. " +
+            "Feldmessungen aus dem Jahr 2024 zeigen, dass gute Geräte bei -20 Grad 40 bis 55 Prozent ihrer Nennleistung erreichen " +
+            "und dennoch viel Strom gegenüber einer Heizpatrone sparen [2]."
+        val g = v.groundAnswer(answer, r.verifiedClaims, "Wärmepumpen im Winter")
+        // Derselbe Befund mit denselben Zahlen steht nur einmal da, und zwar in der vollstaendigeren Fassung
+        assertEquals(g, 1, Regex("40 bis 55 Prozent").findAll(g).count())
+        assertTrue(g, g.contains("Heizpatrone"))
+    }
+
+    @Test
+    fun sameFindingWithRepeatedNumberIsMerged() {
+        val guide = TextChunk(
+            6, "local:guide", "Home Battery Guide", "Home Battery Guide",
+            "A battery of about 8 kilowatt hours fits a household that uses 4,000 kilowatt hours per year and has an 8 kilowatt peak system.",
+            SourceType.LOCAL
+        )
+        val all = chunks + (6 to guide)
+        val para = "For a household consuming 4,000 kilowatt hours annually with an 8 kilowatt peak solar system, " +
+            "a battery capacity of approximately 8 kilowatt hours is recommended"
+        val r = v.verifyClaims(listOf(
+            RawClaimDto(para, "A battery of about 8 kilowatt hours fits a household that uses 4,000 kilowatt hours per year and has an 8 kilowatt peak system", 6)
+        ), all, all.values.toList())
+        val answer = "Sizing\n$para [1].\n" +
+            "Costs\nA battery of about 8 kilowatt hours fits a household that uses 4,000 kilowatt hours per year and has an 8 kilowatt peak system [1]."
+        val g = v.groundAnswer(answer, r.verifiedClaims, "Home battery size")
+        assertEquals(g, 1, Regex("4,000").findAll(g).count())
+    }
+
+    @Test
+    fun bulletsFromSourcesAreRemoved() {
+        val r = verify(dataClaim)
+        val g = v.groundAnswer("• Strukturiertes Datenmanagement hilft, die Daten zu sichern, weiterzugeben und wirksam zu nutzen [1].",
+            r.verifiedClaims, "Datenmanagement")
+        assertTrue(g, g.startsWith("Strukturiertes Datenmanagement"))
+    }
+
+    @Test
+    fun customLengthScalesFactsAndSections() {
+        val medium = com.veritas.localresearch.pipeline.LengthSpec.of(com.veritas.localresearch.settings.AnswerLength.MEDIUM)
+        assertEquals(0, medium.words)
+        assertEquals(5, medium.maxSections)
+        val long = com.veritas.localresearch.pipeline.LengthSpec.of(com.veritas.localresearch.settings.AnswerLength.MEDIUM, 1500)
+        assertEquals(50, long.factTarget)
+        assertTrue(long.detailed && long.outline && long.maxSections >= 8)
+        // Ausserhalb des Bereichs wird begrenzt
+        assertEquals(3000, com.veritas.localresearch.pipeline.LengthSpec.of(com.veritas.localresearch.settings.AnswerLength.SHORT, 99999).words)
+    }
+
+    @Test
     fun wordingThresholdFollowsModelSize() {
         assertEquals(0.6f, wordingThreshold("Qwen3-0.6B-Q4_K_M.gguf"), 0f)
         assertEquals(0.6f, wordingThreshold("Qwen3-1.7B-Q4_K_M.gguf"), 0f)

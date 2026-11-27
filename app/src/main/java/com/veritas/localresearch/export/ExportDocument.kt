@@ -40,7 +40,7 @@ data class ExportDocument(
         private val NUM = Regex("\\d+")
 
         fun from(report: ResearchReport, style: CitationStyle): ExportDocument {
-            val german = LanguageDetector.detect(report.question)?.code?.let { it == "de" } ?: true
+            val german = (LanguageDetector.detect(report.question)?.code ?: com.veritas.localresearch.i18n.I18n.code) == "de"
             val lang = CiteLang(german)
             val entries = Citations.entries(report.verifiedClaims, report.createdAt)
             val byNo = entries.associateBy { it.number }

@@ -24,6 +24,8 @@ import com.veritas.localresearch.scraping.HiddenWebScraper
 import com.veritas.localresearch.settings.SettingsStore
 import com.veritas.localresearch.settings.AnswerLength
 import android.util.Log
+import com.veritas.localresearch.i18n.I18n
+import com.veritas.localresearch.i18n.tr
 import com.veritas.localresearch.verification.DeterministicVerifier
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -49,7 +51,7 @@ class DeepResearchEngine(
     @Volatile private var answerLanguage = "Deutsch"
 
     /** Gewuenschte Antwortlaenge des aktuellen Laufs. */
-    @Volatile private var length = AnswerLength.MEDIUM
+    @Volatile private var length = LengthSpec.of(AnswerLength.MEDIUM)
 
     /**
      * Budgets je Recherche-Tiefe. Komplexe Fragen brauchen mehr Teilaspekte, Quellen und Fakten;
@@ -66,20 +68,20 @@ class DeepResearchEngine(
         val synthesisTokens: Int
     )
 
-    private fun stageKey(stage: String): String = when {
-        stage.startsWith("Stufe 1") -> "Frage zerlegen"
-        stage.startsWith("Stufe 2: Quellen suchen") -> "Suche"
-        stage.startsWith("Stufe 2") -> "Seiten laden"
-        stage.startsWith("Stufe 3: Dokumente") -> "Dokumente indexieren"
-        stage.startsWith("Stufe 3: Hybrid-RAG") -> "Indexieren"
-        stage.startsWith("Stufe 3: Reranking") -> "Reranking"
-        stage.startsWith("Stufe 3") -> "Auswahl"
-        stage.startsWith("Lücken") -> "Lücken-Check"
-        stage.startsWith("Stufe 4: Fakten") -> "Fakten-Extraktion"
-        stage.startsWith("Stufe 4: Antwort-Gliederung") -> "Gliederung"
-        stage.startsWith("Stufe 4") -> "Antwort schreiben"
-        stage.startsWith("Stufe 5") -> "Prüfung"
-        else -> stage.substringBefore(":")
+    /** Zeitgruppe einer Stufe (Schluessel wie "st_search") fuer die Dauer-Anzeige unter der Antwort. */
+    private fun stageKey(stage: String): String = when (stage) {
+        "st_plan" -> "tg_plan"
+        "st_search" -> "tg_search"
+        "st_load" -> "tg_load"
+        "st_docs" -> "tg_docs"
+        "st_index" -> "tg_index"
+        "st_rerank" -> "tg_rerank"
+        "st_gap" -> "tg_gap"
+        "st_extract", "st_extract_n" -> "tg_extract"
+        "st_outline" -> "tg_outline"
+        "st_synth", "st_write" -> "tg_write"
+        "st_verify", "st_check" -> "tg_check"
+        else -> "tg_select"
     }
 
     private fun profileFor(maxRounds: Int) = when (maxRounds) {
@@ -122,14 +124,14 @@ class DeepResearchEngine(
         var executedRounds = 0
         var cachedFinalRanking: List<RankedChunk>? = null
 
-        // Zeitmessung je Stufe ("Stufe 2", "Lücken-Check" ...), fuer die Anzeige unter der Antwort
+        // Zeitmessung je Zeitgruppe (Suche, Seiten laden ...), fuer die Anzeige unter der Antwort
         val startedAt = System.currentTimeMillis()
         val timings = LinkedHashMap<String, Long>()
         var lastKey: String? = null
         var lastTs = startedAt
         fun mark(stage: String?) {
             val now = System.currentTimeMillis()
-            lastKey?.let { timings[it] = (timings[it] ?: 0L) + (now - lastTs) }
+            lastKey?.let { val k = tr(it); timings[k] = (timings[k] ?: 0L) + (now - lastTs) }
             lastKey = stage?.let { stageKey(it) }
             lastTs = now
         }
@@ -141,13 +143,14 @@ class DeepResearchEngine(
             return out
         }
 
-        fun emit(round: Int, stage: String, detail: String, verified: Int = 0, rejected: Int = 0) {
+        /** [stage]: Schluessel der Stufe, [args] fuellt die Platzhalter ihres Titels. */
+        fun emit(round: Int, stage: String, detail: String, verified: Int = 0, rejected: Int = 0, args: List<Any> = emptyList()) {
             if (lastKey != stageKey(stage)) mark(stage)
             onProgress(
                 PipelineProgress(
                     currentRound = round,
                     maxRounds = maxRounds,
-                    stageTitle = stage,
+                    stageTitle = tr(stage, *args.toTypedArray()),
                     detail = detail,
                     scrapedDomains = scrapedDomains.toList(),
                     chunkCount = retriever.totalChunks(),
@@ -159,11 +162,20 @@ class DeepResearchEngine(
         }
 
         val cfg = settings.current.let { c -> if (lengthOverride != null) c.copy(answerLength = lengthOverride) else c }
-        val detailed = cfg.answerLength == AnswerLength.LONG
+        val spec = if (lengthOverride != null) LengthSpec.of(lengthOverride) else LengthSpec.of(cfg.answerLength, cfg.answerWords)
+        val detailed = spec.detailed
         // Ausfuehrlich: mehr Suchanfragen, Seiten und Abschnitte, damit auch Unterthemen Quellen bekommen
         val profile = profileFor(maxRounds).let { p ->
             if (detailed) p.copy(queries = p.queries + 2, pagesLaterRounds = p.pagesLaterRounds + 3,
                 finalChunks = p.finalChunks + 6, maxPerDomain = p.maxPerDomain + 1) else p
+        }.let { p ->
+            // Selbst festgelegte Wortzahl: so viele Abschnitte und Quellen, dass genug gepruefte Fakten zusammenkommen
+            if (spec.words <= 0) p else p.copy(
+                queries = p.queries + (spec.words / 800).coerceAtMost(4),
+                pagesLaterRounds = p.pagesLaterRounds + (spec.words / 400).coerceAtMost(8),
+                finalChunks = maxOf(p.finalChunks, spec.factTarget).coerceAtMost(60),
+                maxPerDomain = p.maxPerDomain + spec.words / 1000
+            )
         }
         // Ausfuehrlich sucht immer eine zweite Runde zu den Unterthemen
         val searchRounds = if (detailed) maxOf(maxRounds, 2) else maxRounds
@@ -178,7 +190,7 @@ class DeepResearchEngine(
             val docLang = LanguageDetector.detect(sample)
             if (docLang != null && docLang != qLang) { answerLanguage = docLang.name; crossLang = true }
         }
-        length = cfg.answerLength
+        length = spec
         val synthesisTokens = (profile.synthesisTokens * length.tokenFactor).toInt()
         // Eigene Dokumente duerfen mehr Abschnitte stellen als eine Webseite; ohne Web gibt es keine Grenze je Datei
         val localCap = if (docsOnly) profile.finalChunks * 2 else profile.maxPerDomain + 2
@@ -188,14 +200,14 @@ class DeepResearchEngine(
         val parentOf = HashMap<Int, TextChunk>()
         if (docs.isNotEmpty() && docStore != null) {
             for ((i, d) in docs.withIndex()) {
-                emit(1, "Stufe 3: Dokumente indexieren (${i + 1}/${docs.size})", d.title)
+                emit(1, "st_docs", d.title, args = listOf(i + 1, docs.size))
                 val tree = docStore.chunkTree(d, chunker)
                 parentOf.putAll(tree.parentOf)
                 val chunks = tree.children
                 val tag = retriever.embedderTag
                 val vectors = docStore.loadVectors(d.id, tag, chunks)
                     ?: retriever.embedChunks(chunks) { k, n ->
-                        if (k % 512 < 16 || k == n) emit(1, "Stufe 3: Dokumente indexieren (${i + 1}/${docs.size})", "${d.title}: $k von $n Abschnitten")
+                        if (k % 512 < 16 || k == n) emit(1, "st_docs", tr("d_docs_index", d.title, k, n), args = listOf(i + 1, docs.size))
                     }.also { docStore.saveVectors(d.id, tag, chunks, it) }
                 retriever.indexChunks(chunks, vectors)
                 scrapedDomains.add(d.fileName)
@@ -204,8 +216,7 @@ class DeepResearchEngine(
         }
 
         // === STUFE 1: Query-Zerlegung via GBNF, parallel dazu schon die Suche mit der Originalfrage ===
-        emit(1, "Stufe 1: Frage zerlegen",
-            if (docsOnly) "Erstelle Suchanfragen zu allen Teilaspekten…" else "Erstelle Suchanfragen zu allen Teilaspekten, Websuche läuft bereits…")
+        emit(1, "st_plan", if (docsOnly) tr("d_plan_docs") else tr("d_plan_web"))
         val (plan, earlyResults) = if (docsOnly) {
             (if (overview) QueryPlanDto(queries = listOf(question), englishQuery = question) else planQueries(question, profile.queries, detailed, forDocs = true)) to emptyList()
         } else coroutineScope {
@@ -239,7 +250,7 @@ class DeepResearchEngine(
             }
             // Cross-Encoder sortiert jede Liste neu: Frage und Abschnitt werden gemeinsam bewertet
             if (rerank) {
-                emit(executedRounds.coerceAtLeast(1), "Stufe 3: Reranking", "Bewerte ${lists.sumOf { it.size }} Kandidaten mit dem Cross-Encoder…")
+                emit(executedRounds.coerceAtLeast(1), "st_rerank", tr("d_rerank", lists.sumOf { it.size }))
                 lists = queries.zip(lists).map { (q, list) ->
                     if (list.size < 2) return@map list
                     val scores = reranker.score(q, list.map { "${it.chunk.titleWithSection}. ${it.chunk.rawText}" }) ?: return@map list
@@ -284,7 +295,7 @@ class DeepResearchEngine(
             executedRounds = round
 
             // === STUFE 2: Parallele Suche (APIs + Websuche gleichzeitig) ===
-            emit(round, "Stufe 2: Quellen suchen (Runde $round)", currentQueries.joinToString(" • "))
+            emit(round, "st_search", currentQueries.joinToString(" • "), args = listOf(round))
             val newDocs = mutableListOf<ScrapedDocument>()
             val candidateUrls = mutableListOf<Pair<String, String>>()
 
@@ -294,7 +305,7 @@ class DeepResearchEngine(
                         // Englische Quellen (Wikipedia EN, arXiv) nur, wenn die Frage englisch ist oder die Sprache offen bleibt
                         val englishOk = qLang == null || qLang.code == "en"
                         if ((plan.useWikipedia || detailed) && cfg.useWikipedia) {
-                            add(async { factApis.fetchWikipedia(currentQueries.first(), lang = qLang?.code ?: "de", limit = 2) })
+                            add(async { factApis.fetchWikipedia(currentQueries.first(), lang = qLang?.wiki ?: com.veritas.localresearch.i18n.I18n.code.let { if (it == "nb") "no" else it }, limit = 2) })
                             if (qLang == null) add(async { factApis.fetchWikipedia(englishQuery, lang = "en", limit = 1) })
                         }
                         if (englishOk && plan.useArxiv && cfg.useArxiv) {
@@ -334,7 +345,7 @@ class DeepResearchEngine(
             if (urlsToScrape.isNotEmpty()) {
                 val scrapeSemaphore = Semaphore(4)
                 val completed = AtomicInteger(0)
-                emit(round, "Stufe 2: Quellen laden (0/${urlsToScrape.size})", "Lade ${urlsToScrape.size} Webseiten parallel…")
+                emit(round, "st_load", tr("d_load", urlsToScrape.size), args = listOf(0, urlsToScrape.size))
 
                 val scrapedWebDocs = coroutineScope {
                     urlsToScrape.map { (url, title) ->
@@ -343,7 +354,7 @@ class DeepResearchEngine(
                                 val domain = HiddenWebScraper.extractDomain(url)
                                 val doc = webScraper.scrapePage(url, title)
                                 val done = completed.incrementAndGet()
-                                emit(round, "Stufe 2: Quellen laden ($done/${urlsToScrape.size})", domain)
+                                emit(round, "st_load", domain, args = listOf(done, urlsToScrape.size))
                                 doc
                             }
                         }
@@ -382,7 +393,7 @@ class DeepResearchEngine(
                 cachedFinalRanking = null
                 totalScrapedDocs += newDocs.size
                 newDocs.forEach { scrapedDomains.add(it.domain) }
-                emit(round, "Stufe 3: Hybrid-RAG-Index", "Indexiere ${newDocs.size} bereinigte Dokumente (BM25 + Embeddings)…")
+                emit(round, "st_index", tr("d_index", newDocs.size))
                 val chunks = newDocs.flatMap { chunker.chunkDocument(it) }
                 retriever.indexChunks(chunks)
             } else if (round > 1 && retriever.totalChunks() > 0) {
@@ -395,7 +406,7 @@ class DeepResearchEngine(
                 val previewChunks = rankAcrossAspects()
                 if (previewChunks.isNotEmpty()) {
                     cachedFinalRanking = previewChunks
-                    emit(round, "Lücken-Check (Runde $round)", "Prüfe, ob relevante Fakten fehlen…")
+                    emit(round, "st_gap", tr("d_gap"), args = listOf(round))
                     val gap = checkInformationGaps(question, previewChunks.take(6).map { it.chunk.rawText })
                     // Ausfuehrlich: noch nicht gesuchte Unterthemen kommen vor die Luecken-Anfragen des Modells
                     val pendingSubtopics = subtopicQueries.filter { q -> aspectQueries.none { it.equals(q, ignoreCase = true) } }
@@ -418,10 +429,10 @@ class DeepResearchEngine(
         // Ueberblick: Abschnitte gleichmaessig ueber jedes Dokument verteilt statt nach Aehnlichkeit zur Frage
         val overviewPick = if (overview) overviewChunks(profile.finalChunks * 2, question) else null
         val topRankedSmall = if (overviewPick != null) {
-            emit(executedRounds, "Stufe 3: Auswahl", "Wähle Abschnitte aus allen Teilen der Dokumente…")
+            emit(executedRounds, "st_select", tr("d_select"))
             overviewPick
         } else cachedFinalRanking ?: run {
-            emit(executedRounds, "Stufe 3: Hybrid-Retrieval", "Wähle die ${profile.finalChunks} stärksten Abschnitte (Cross-Source-gewichtet)…")
+            emit(executedRounds, "st_retrieve", tr("d_retrieve", profile.finalChunks))
             rankAcrossAspects()
         }
         // Eigene Dokumente: statt des kleinen Suchabschnitts geht der ganze Absatz an das Modell (je Absatz einmal)
@@ -435,8 +446,8 @@ class DeepResearchEngine(
                 PipelineProgress(
                     currentRound = executedRounds,
                     maxRounds = maxRounds,
-                    stageTitle = "Abgeschlossen",
-                    detail = "Keine passenden Quellen gefunden.",
+                    stageTitle = tr("done"),
+                    detail = tr("done_none"),
                     scrapedDomains = scrapedDomains.toList(),
                     chunkCount = retriever.totalChunks(),
                     isRunning = false
@@ -444,8 +455,7 @@ class DeepResearchEngine(
             )
             return finish(ResearchReport(
                 question = question,
-                synthesizedAnswer = if (docsOnly) "In den ausgewählten Dokumenten wurde dazu nichts gefunden."
-                    else "Dazu wurden keine belegten Informationen in den abgerufenen Quellen gefunden.",
+                synthesizedAnswer = if (docsOnly) tr("ans_none_docs") else tr("ans_none_web"),
                 verifiedClaims = emptyList(),
                 rejectedClaimCount = 0,
                 unverifiedNumbers = emptyList(),
@@ -457,17 +467,17 @@ class DeepResearchEngine(
         }
 
         // === STUFE 4a: Quote-First Fakten-Extraktion (striktes GBNF-JSON, Temp 0.0) ===
-        emit(executedRounds, "Stufe 4: Fakten-Extraktion", "Extrahiere wörtliche Zitate (GBNF-Grammar)…")
+        emit(executedRounds, "st_extract", tr("d_extract"))
         // Absaetze sind fast doppelt so lang wie Webabschnitte: weniger je Durchgang, damit der Prompt in n_ctx passt
         val perPass = if (parentOf.isEmpty()) profile.chunksPerPass else maxOf(3, profile.chunksPerPass * 5 / 9)
         val passes = topRanked.map { it.chunk }.chunked(perPass)
         val rawClaims = passes.flatMapIndexed { i, group ->
-            if (passes.size > 1) emit(executedRounds, "Stufe 4: Fakten-Extraktion (${i + 1}/${passes.size})", "Extrahiere wörtliche Zitate aus ${group.size} Abschnitten…")
-            extractClaimsWithQuotes(question, group, (profile.claimsPerPass + length.extraFacts / 2).coerceAtLeast(3)).claims
+            if (passes.size > 1) emit(executedRounds, "st_extract_n", tr("d_extract_n", group.size), args = listOf(i + 1, passes.size))
+            extractClaimsWithQuotes(question, group, (profile.claimsPerPass + length.extraFacts / 2).coerceIn(3, 12)).claims
         }
 
         // === STUFE 5a: Deterministische Quote- & Cross-Source-Verifikation VOR Synthese ===
-        emit(executedRounds, "Stufe 5: Zitat-Verifikation", "Prüfe jedes Zitat deterministisch im Original-Chunk…")
+        emit(executedRounds, "st_verify", tr("d_verify"))
         val chunkMap = topRanked.associate { it.chunk.chunkId to it.chunk }
         val firstPass = verifier.verifyClaims(
             rawClaims = rawClaims,
@@ -499,10 +509,10 @@ class DeepResearchEngine(
             return TopicHeuristics.mentions(family, docWords[vc.chunk.url].orEmpty()) >= 3
         }
 
-        val minFacts = (3 + maxRounds + length.extraFacts).coerceAtLeast(2)
+        val minFacts = if (length.words > 0) length.factTarget else (3 + maxRounds + length.extraFacts).coerceAtLeast(2)
         val usableFirst = firstPass.verifiedClaims.count(::aboutTopic)
         val combined = if (usableFirst >= minFacts) firstPass else {
-            emit(executedRounds, "Stufe 5: Zitat-Verifikation", "Ergänze passende Sätze direkt aus den Quellen…")
+            emit(executedRounds, "st_verify", tr("d_verify_add"))
             // Quellsaetze aus den besten Abschnitten zum Hauptthema, danach aus allen weiteren geladenen dazu
             val pool = (topRanked.map { it.chunk } + allChunks).distinctBy { it.chunkId }
             val onTopicPool = pool.filter(::chunkAboutTopic).let { if (it.size >= 3) it else pool }
@@ -532,15 +542,14 @@ class DeepResearchEngine(
         )
 
         if (verification.verifiedClaims.isEmpty()) {
-            val fallbackMsg = if (docsOnly) "In den ausgewählten Dokumenten stehen dazu keine durch wörtliche Zitate belegten Aussagen."
-                else "Dazu wurden keine durch wörtliche Quellzitate belegten Informationen gefunden."
+            val fallbackMsg = if (docsOnly) tr("ans_noquote_docs") else tr("ans_noquote_web")
             onStreamToken(fallbackMsg)
             onProgress(
                 PipelineProgress(
                     currentRound = executedRounds,
                     maxRounds = maxRounds,
-                    stageTitle = "Abgeschlossen (0 geprüfte Zitate)",
-                    detail = "${verification.rejectedCount} unbelegte Modellaussagen verworfen.",
+                    stageTitle = tr("done_zero"),
+                    detail = tr("done_zero_d", verification.rejectedCount),
                     scrapedDomains = scrapedDomains.toList(),
                     chunkCount = retriever.totalChunks(),
                     verifiedClaimsCount = 0,
@@ -564,20 +573,20 @@ class DeepResearchEngine(
         // === STUFE 4b: Synthese ausschliesslich aus geprueften Fakten ===
         emit(
             executedRounds,
-            "Stufe 4: Antwort-Synthese",
-            "Formuliere Antwort aus ${verification.verifiedClaims.size} zitatgeprüften Fakten…",
+            "st_synth",
+            tr("d_synth", verification.verifiedClaims.size),
             verified = verification.verifiedClaims.size,
             rejected = verification.rejectedCount
         )
         // Ab Standard-Tiefe und genug Fakten: erst Gliederung, dann Abschnitt fuer Abschnitt
-        val rawAnswer = (if (length.outline && verification.verifiedClaims.size >= 4 && (maxRounds >= 2 || length == AnswerLength.LONG)) {
-            emit(executedRounds, "Stufe 4: Antwort-Gliederung", "Ordne ${verification.verifiedClaims.size} Fakten Abschnitten zu…",
+        val rawAnswer = (if (length.outline && verification.verifiedClaims.size >= 4 && (maxRounds >= 2 || length.detailed || length.words > 0)) {
+            emit(executedRounds, "st_outline", tr("d_outline", verification.verifiedClaims.size),
                 verified = verification.verifiedClaims.size, rejected = verification.rejectedCount)
             outlineAndWrite(
                 question, verification.verifiedClaims, synthesisTokens,
                 onSection = { i, n ->
-                    emit(executedRounds, "Stufe 4: Antwort schreiben (Abschnitt $i/$n)", "Schreibe nur aus den zugeordneten Fakten…",
-                        verified = verification.verifiedClaims.size, rejected = verification.rejectedCount)
+                    emit(executedRounds, "st_write", tr("d_write"),
+                        verified = verification.verifiedClaims.size, rejected = verification.rejectedCount, args = listOf(i, n))
                 },
                 onStreamToken = onStreamToken
             )
@@ -586,8 +595,8 @@ class DeepResearchEngine(
         // === STUFE 5b: Deterministischer Zahlen-, Datums- & Zitat-Post-Check ===
         emit(
             executedRounds,
-            "Stufe 5: Zahlen- & Fakten-Check",
-            "Prüfe jede Zahl und jedes Datum gegen die Quellen…",
+            "st_check",
+            tr("d_check"),
             verified = verification.verifiedClaims.size,
             rejected = verification.rejectedCount
         )
@@ -608,7 +617,7 @@ class DeepResearchEngine(
             val cited = Regex("\\[(\\d+)]").findAll(text).mapNotNull { it.groupValues[1].toIntOrNull() }.toSet()
             val missing = verifier.appendixSentences(text,
                 verifier.notYetCovered(text, verification.verifiedClaims.filter { it.citationIndex !in cited }), verbatim)
-            if (missing.isEmpty() || length == AnswerLength.SHORT) text
+            if (missing.isEmpty() || length.short) text
             else {
                 val title = if (answerLanguage == LanguageDetector.GERMAN.name) "Weitere Befunde" else "Further findings"
                 val heading = if (text.lines().any { it.startsWith("## ") }) "## $title\n" else ""
@@ -638,8 +647,8 @@ class DeepResearchEngine(
             PipelineProgress(
                 currentRound = executedRounds,
                 maxRounds = maxRounds,
-                stageTitle = "Verifiziert abgeschlossen",
-                detail = "${usedClaims.size} geprüfte Fakten • ${unverifiedNumbers.size} ungeprüfte Zahlen",
+                stageTitle = tr("done_verified"),
+                detail = tr("done_verified_d", usedClaims.size, unverifiedNumbers.size),
                 scrapedDomains = scrapedDomains.toList(),
                 chunkCount = retriever.totalChunks(),
                 verifiedClaimsCount = usedClaims.size,
@@ -751,7 +760,7 @@ class DeepResearchEngine(
             - Priorisiere Fakten, die als „mehrfach belegt“ markiert sind.
             - Schreibe keine Zitate ab und keine Kennzeichnungen wie „Quelle“ oder „Beleg“, nur deine Sätze mit Nummern.
             - Nutze ALLE gelieferten Fakten, die zur Frage passen, und lasse keinen Teilaspekt der Frage aus.
-            ${if (length == AnswerLength.SHORT) "- Antworte knapp in einem Absatz mit ${length.sentences} Sätzen, ohne Überschriften." else "- Gliedere bei mehreren Teilaspekten in Abschnitte mit kurzen Überschriften (z. B. Stand, Einflussfaktoren, Beispiele, offene Punkte)."}
+            ${if (length.short) "- Antworte knapp in einem Absatz mit ${length.sentences} Sätzen, ohne Überschriften." else "- Gliedere bei mehreren Teilaspekten in Abschnitte mit kurzen Überschriften (z. B. Stand, Einflussfaktoren, Beispiele, offene Punkte)."}
             - Fehlen Belege zu einem Teilaspekt, schreibe das ausdrücklich, statt Wissen zu ergänzen.
             - Bleibe sachlich und vollständig, ohne Füllsätze.
         """.trimIndent()
@@ -764,7 +773,8 @@ class DeepResearchEngine(
             userPrompt = usr,
             gbnfGrammar = null,
             temperature = 0.1f,
-            maxTokens = maxTokens,
+            // Ohne Gliederung schreibt das Modell alles in einem Zug: innerhalb des Kontextfensters bleiben
+            maxTokens = maxTokens.coerceAtMost(2500),
             onToken = onStreamToken
         )
     }
@@ -790,10 +800,10 @@ class DeepResearchEngine(
             val usable = if (com.veritas.localresearch.verification.endsMidSentence(joined)) pieces.dropLast(1) else pieces
             usable
                 .filter { s ->
-                    val n = s.split(SPACES).size
+                    val n = s.split(SPACES).size.let { if (it < 3) s.length / 2 else it }
                     n in 8..45 && s.count(Char::isLetter) > s.length / 2 &&
                         !NOT_A_STATEMENT.containsMatchIn(s) && !OPEN_FRAGMENT.containsMatchIn(s) &&
-                        s.first().isUpperCase() && !s.endsWith("?") &&
+                        s.first().isLetter() && !s.first().isLowerCase() && !s.endsWith("?") && !s.endsWith("？") &&
                         (qWords.isEmpty() || questionWordHits(question, s) >= need) &&
                         alreadyQuoted.none { q -> q.contains(s) || s.contains(q) }
                 }
@@ -811,7 +821,7 @@ class DeepResearchEngine(
         return candidates.indices.sortedByDescending { scores[it] }
             .filter { i ->
                 val d = candidates[i].first.domain
-                val ok = docsOnly || (perDomain[d] ?: 0) < (if (length == AnswerLength.LONG) 3 else 2)
+                val ok = docsOnly || (perDomain[d] ?: 0) < (if (length.detailed) 3 else 2) + length.words / 1000
                 if (ok) perDomain[d] = (perDomain[d] ?: 0) + 1
                 ok
             }
@@ -833,13 +843,13 @@ class DeepResearchEngine(
     suspend fun sourceGuide(doc: LocalDoc, docStore: LocalDocumentStore, onProgress: (PipelineProgress) -> Unit): Pair<String, List<String>> {
         val text = docStore.text(doc.id)
         val lang = LanguageDetector.detect(text.take(4000))
-        val german = lang == null || lang == LanguageDetector.GERMAN
+        val german = lang == LanguageDetector.GERMAN || (lang == null && I18n.code == "de")
         val q = if (german) "Worum geht es in dem Dokument?" else "What is this document about?"
         val report = runResearch(q, maxRounds = 1, onProgress = onProgress, onStreamToken = {}, docs = listOf(doc),
             docStore = docStore, useWeb = false, lengthOverride = AnswerLength.SHORT)
         val summary = if (report.verifiedClaims.isEmpty()) "" else report.synthesizedAnswer
             .replace(Regex("\\s*\\[\\d+]"), "").lines().joinToString(" ") { it.trim() }.replace(Regex("\\s{2,}"), " ").trim()
-        onProgress(PipelineProgress(stageTitle = "Fragevorschläge", detail = doc.title, isRunning = true))
+        onProgress(PipelineProgress(stageTitle = tr("guide_q"), detail = doc.title, isRunning = true))
         val sample = overviewChunks(6).orEmpty().joinToString("\n\n") { it.chunk.rawText }.take(3500)
         val language = lang?.name ?: "Deutsch"
         val sys = "Du schlägst Fragen zu einem Dokument vor. Formuliere 4 kurze, konkrete Fragen auf $language, die sich mit dem Text " +
@@ -936,16 +946,18 @@ class DeepResearchEngine(
         onSection: (Int, Int) -> Unit,
         onStreamToken: (String) -> Unit
     ): String? {
-        val factsBlock = verifiedClaims.joinToString("\n") { "[${it.citationIndex}] ${it.claim}" }
-        val detailed = length == AnswerLength.LONG
-        val maxSections = if (detailed) 7 else 5
+        // Hoechstens 40 Fakten im Prompt (Kontextfenster); die uebrigen ordnet der Wortvergleich unten zu
+        val outlineFacts = verifiedClaims.take(40)
+        val factsBlock = outlineFacts.joinToString("\n") { "[${it.citationIndex}] ${it.claim}" }
+        val detailed = length.detailed
+        val maxSections = length.maxSections
         val sys = "Du gliederst eine Antwort. Bilde 2 bis $maxSections Abschnitte mit kurzen, sachlichen Überschriften auf $answerLanguage, " +
             "die zusammen alle Teilaspekte der Frage abdecken. Ordne jeden Fakt über seine Nummer genau einem passenden Abschnitt zu. " +
             (if (detailed) "Gliedere wie eine wissenschaftliche Arbeit: zuerst Begriff und Einordnung, dann je ein Abschnitt pro Unterthema " +
                 "(z. B. einzelne Verfahren oder Anwendungsbereiche), dann Einflussfaktoren und Hindernisse, zuletzt offene Fragen. " else "") +
             "Antworte ausschließlich als JSON."
         val usr = "Frage: $question\n\nGEPRÜFTE FAKTEN:\n$factsBlock"
-        val out = llama.generate(sys, usr, GbnfGrammars.OUTLINE, temperature = 0.05f, maxTokens = 60 + 25 * verifiedClaims.size)
+        val out = llama.generate(sys, usr, GbnfGrammars.OUTLINE, temperature = 0.05f, maxTokens = 60 + 25 * outlineFacts.size)
         val outline = runCatching { json.decodeFromString<OutlineDto>(out) }.getOrNull() ?: return null
 
         val byIndex = verifiedClaims.associateBy { it.citationIndex }
@@ -967,6 +979,7 @@ class DeepResearchEngine(
         }
 
         val perSection = (totalTokens / sections.size).coerceIn((160 * length.tokenFactor).toInt(), (400 * length.tokenFactor).toInt())
+            .coerceAtMost(1400)
         val titles = sections.joinToString(" | ") { it.first }
         val answer = StringBuilder()
         for ((i, sec) in sections.withIndex()) {
@@ -1027,7 +1040,8 @@ class DeepResearchEngine(
         private val WIKI_HEADING = Regex("(?m)^\\s*={2,4}\\s*(.+?)\\s*={2,4}\\s*$")
         val GENERIC_HEADINGS = setOf("literatur", "weblinks", "einzelnachweise", "siehe auch", "anmerkungen", "quellen",
             "references", "external links", "see also", "further reading", "notes", "bibliography", "weiterführende literatur")
-        val SENTENCE_END = Regex("(?<=\\p{L}{2}[.!?])\\s+(?=\\p{Lu})|\\n+")
+        val SENTENCE_END = Regex("(?<=\\p{L}{2}[.!?])\\s+(?=\\p{Lu})|(?<=[。！？])\\s*(?=\\S)|" +
+            "(?<=[.!?؟।])\\s+(?=[\\u0600-\\u06FF\\u0590-\\u05FF\\u0900-\\u097F\\u0E00-\\u0E7F\\u3400-\\u9FFF\\u3040-\\u30FF\\uAC00-\\uD7AF])|\\n+")
         val SPACES = Regex("\\s+")
         val NON_WORD = Regex("[^\\p{L}\\p{N}]+")
         /** Fussnoten, Literaturangaben, Links: keine Aussagen. */

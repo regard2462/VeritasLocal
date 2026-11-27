@@ -1,6 +1,7 @@
 package com.veritas.localresearch.docs
 
 import kotlinx.coroutines.Dispatchers
+import com.veritas.localresearch.i18n.tr
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import net.sourceforge.tess4j.Tesseract
@@ -28,7 +29,7 @@ class DesktopOcr : OcrEngine {
     private inline fun <T> native(block: () -> T): T = try {
         block()
     } catch (e: UnsatisfiedLinkError) {
-        error("Texterkennung nicht verfügbar: Tesseract fehlt (unter Linux das Paket tesseract-ocr installieren).")
+        error(tr("ocr_missing"))
     }
 
     override suspend fun pdfPages(bytes: ByteArray, tessdataParent: File, langs: String, pages: List<Int>?, maxPages: Int,

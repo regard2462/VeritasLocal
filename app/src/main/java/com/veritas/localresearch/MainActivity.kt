@@ -24,6 +24,8 @@ class MainActivity : ComponentActivity() {
                 val q = intent.getStringExtra("autorun_q")
                 LaunchedEffect(q) {
                     if (debuggable && !q.isNullOrBlank()) {
+                        intent.getStringExtra("autorun_ui")?.let { code -> vm.updateSettings { it.copy(uiLanguage = code) } }
+                        vm.updateSettings { it.copy(answerWords = intent.getIntExtra("autorun_words", 0)) }
                         intent.getStringExtra("autorun_len")?.let { name ->
                             com.veritas.localresearch.settings.AnswerLength.entries.firstOrNull { it.name == name }
                                 ?.let { len -> vm.updateSettings { it.copy(answerLength = len) } }

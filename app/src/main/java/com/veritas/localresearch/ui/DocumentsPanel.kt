@@ -1,6 +1,7 @@
 package com.veritas.localresearch.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import com.veritas.localresearch.i18n.tr
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -44,10 +45,10 @@ fun DocumentsPanel(viewModel: ResearchViewModel, importStatus: String?, enabled:
 
     OutlinedCard(modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Eigene Dokumente", style = MaterialTheme.typography.titleSmall)
+            Text(tr("my_docs"), style = MaterialTheme.typography.titleSmall)
             if (docs.isEmpty() && importStatus == null) {
                 Text(
-                    "PDF (auch Scans), Word, ODT, EPUB, HTML, Text, Markdown oder Fotos. Die Dateien bleiben auf dem Gerät.",
+                    tr("docs_empty"),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -60,8 +61,8 @@ fun DocumentsPanel(viewModel: ResearchViewModel, importStatus: String?, enabled:
                         Text(
                             buildString {
                                 append(d.kind)
-                                if (d.pages > 0) append(" • ${d.pages} Seiten")
-                                if (d.ocr) append(" • Texterkennung")
+                                if (d.pages > 0) append(" • " + if (d.pages == 1) tr("pages_one") else tr("pages_n", d.pages))
+                                if (d.ocr) append(" • " + tr("ocr_tag"))
                                 append(" • ${formatChars(d.chars)}")
                                 if (d.fileName != d.title) append(" • ${d.fileName}")
                             },
@@ -70,7 +71,7 @@ fun DocumentsPanel(viewModel: ResearchViewModel, importStatus: String?, enabled:
                         )
                     }
                     IconButton(onClick = { confirmRemove = d }, enabled = enabled) {
-                        Icon(Icons.Default.Delete, contentDescription = "Entfernen")
+                        Icon(Icons.Default.Delete, contentDescription = tr("remove"))
                     }
                 }
                 DocumentGuide(d, enabled = enabled && importStatus == null, viewModel = viewModel)
@@ -79,7 +80,7 @@ fun DocumentsPanel(viewModel: ResearchViewModel, importStatus: String?, enabled:
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     Text(importStatus, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                    TextButton(onClick = viewModel::stopResearch) { Text("Abbrechen") }
+                    TextButton(onClick = viewModel::stopResearch) { Text(tr("cancel")) }
                 }
             }
             OutlinedButton(
@@ -88,7 +89,7 @@ fun DocumentsPanel(viewModel: ResearchViewModel, importStatus: String?, enabled:
             ) {
                 Icon(Icons.Default.NoteAdd, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
-                Text("Dokument hinzufügen")
+                Text(tr("add_doc"))
             }
         }
     }
@@ -96,10 +97,10 @@ fun DocumentsPanel(viewModel: ResearchViewModel, importStatus: String?, enabled:
     confirmRemove?.let { d ->
         AlertDialog(
             onDismissRequest = { confirmRemove = null },
-            title = { Text("Dokument entfernen?") },
-            text = { Text("„${d.title}“ wird aus der App gelöscht. Die Originaldatei bleibt erhalten.") },
-            confirmButton = { TextButton(onClick = { viewModel.removeDocument(d.id); confirmRemove = null }) { Text("Entfernen") } },
-            dismissButton = { TextButton(onClick = { confirmRemove = null }) { Text("Abbrechen") } }
+            title = { Text(tr("remove_doc_q")) },
+            text = { Text(tr("remove_doc_text", d.title)) },
+            confirmButton = { TextButton(onClick = { viewModel.removeDocument(d.id); confirmRemove = null }) { Text(tr("remove")) } },
+            dismissButton = { TextButton(onClick = { confirmRemove = null }) { Text(tr("cancel")) } }
         )
     }
 }
@@ -111,10 +112,10 @@ private fun DocumentGuide(d: LocalDoc, enabled: Boolean, viewModel: ResearchView
     var open by remember(d.id) { mutableStateOf(false) }
     Column(Modifier.padding(start = 48.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         if (d.summary.isBlank()) {
-            TextButton(onClick = { viewModel.createGuide(d.id) }, enabled = enabled) { Text("Überblick erstellen") }
+            TextButton(onClick = { viewModel.createGuide(d.id) }, enabled = enabled) { Text(tr("make_guide")) }
             return@Column
         }
-        TextButton(onClick = { open = !open }) { Text(if (open) "Überblick ausblenden" else "Überblick und Fragen") }
+        TextButton(onClick = { open = !open }) { Text(if (open) tr("hide_guide") else tr("show_guide")) }
         if (open) {
             Text(d.summary, style = MaterialTheme.typography.bodySmall)
             if (d.questions.isNotEmpty()) {
@@ -136,7 +137,7 @@ private fun DocumentGuide(d: LocalDoc, enabled: Boolean, viewModel: ResearchView
 }
 
 private fun formatChars(n: Int): String = when {
-    n >= 1_000_000 -> String.format(java.util.Locale.GERMANY, "%.1f Mio. Zeichen", n / 1_000_000.0)
-    n >= 1_000 -> "${n / 1000} Tsd. Zeichen"
-    else -> "$n Zeichen"
+    n >= 1_000_000 -> tr("chars_m", String.format(com.veritas.localresearch.i18n.I18n.locale, "%.1f", n / 1_000_000.0))
+    n >= 1_000 -> tr("chars_k", n / 1000)
+    else -> tr("chars", n)
 }

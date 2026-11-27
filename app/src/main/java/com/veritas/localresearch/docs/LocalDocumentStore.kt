@@ -1,6 +1,7 @@
 package com.veritas.localresearch.docs
 
 import android.content.Context
+import com.veritas.localresearch.i18n.tr
 import com.veritas.localresearch.domain.ScrapedDocument
 import com.veritas.localresearch.domain.SourceMeta
 import com.veritas.localresearch.domain.SourceType
@@ -78,15 +79,15 @@ class LocalDocumentStore(private val context: Context) {
     /** Liest die Datei, legt Text und Eintrag an. Fehlermeldung als Text, wenn nichts lesbar ist. */
     suspend fun import(fileName: String, bytes: ByteArray, onStatus: (String) -> Unit = {}): Result<LocalDoc> = withContext(Dispatchers.Default) {
         runCatching {
-            require(bytes.size <= MAX_BYTES) { "Datei ist größer als ${MAX_BYTES / 1024 / 1024} MB." }
-            val kind = DocumentParser.kindOf(fileName, bytes) ?: error("Dateiformat wird nicht unterstützt.")
+            require(bytes.size <= MAX_BYTES) { tr("file_too_big_mb", MAX_BYTES / 1024 / 1024) }
+            val kind = DocumentParser.kindOf(fileName, bytes) ?: error(tr("fmt_unsupported"))
             var usedOcr = false
             var outline = emptyList<OutlineEntry>()
             val parsed = if (kind == DocumentParser.Kind.IMAGE) {
-                val engine = Ocr.engine ?: error("Texterkennung ist hier nicht verfügbar.")
+                val engine = Ocr.engine ?: error(tr("ocr_unavailable"))
                 val parent = Ocr.ensureData(context, onStatus).getOrThrow()
-                onStatus("Texterkennung läuft…")
-                val text = engine.image(bytes, parent, Ocr.LANGS) ?: error("Bild konnte nicht gelesen werden.")
+                onStatus(tr("ocr_running"))
+                val text = engine.image(bytes, parent, Ocr.LANGS) ?: error(tr("img_unreadable"))
                 usedOcr = true
                 DocumentParser.Parsed(PdfTextExtractor.cleanOcr(text))
             } else if (kind == DocumentParser.Kind.PDF) {
@@ -101,8 +102,8 @@ class LocalDocumentStore(private val context: Context) {
                     }
                     if (parent != null) {
                         val res = engine.pdfPages(bytes, parent, Ocr.LANGS, if (p == null) null else scanned, Ocr.MAX_PAGES) { k, n ->
-                            onStatus("Texterkennung Seite $k von $n…")
-                        } ?: error("Texterkennung konnte nicht starten.")
+                            onStatus(tr("ocr_page", k, n))
+                        } ?: error(tr("ocr_start_failed"))
                         if (p == null) {
                             val last = res.keys.maxOrNull() ?: -1
                             for (i in 0..last) pageTexts.add("")
@@ -113,7 +114,7 @@ class LocalDocumentStore(private val context: Context) {
                         }
                     }
                 }
-                if (p == null && !usedOcr) error("PDF konnte nicht gelesen werden.")
+                if (p == null && !usedOcr) error(tr("pdf_unreadable"))
                 val starts = ArrayList<Int>()
                 val sb = StringBuilder()
                 for (page in pageTexts) {
@@ -123,13 +124,13 @@ class LocalDocumentStore(private val context: Context) {
                 }
                 outline = p?.outline.orEmpty().map { OutlineEntry(it.page + 1, it.level, it.title) }
                 DocumentParser.Parsed(sb.toString(), p?.title.orEmpty(), p?.authors.orEmpty(), p?.date.orEmpty(), starts)
-            } else DocumentParser.parse(kind, bytes) ?: error("Kein Text in der Datei gefunden.")
+            } else DocumentParser.parse(kind, bytes) ?: error(tr("no_text"))
             val text = parsed.text
             if (text.count(Char::isLetter) < 40) {
-                error(if (kind == DocumentParser.Kind.PDF || kind == DocumentParser.Kind.IMAGE) "Kein lesbarer Text gefunden, auch nicht per Texterkennung."
-                    else "Kein Text in der Datei gefunden.")
+                error(if (kind == DocumentParser.Kind.PDF || kind == DocumentParser.Kind.IMAGE) tr("no_text_ocr")
+                    else tr("no_text"))
             }
-            require(text.length <= MAX_CHARS) { "Text ist länger als ${MAX_CHARS / 1_000_000} Mio. Zeichen." }
+            require(text.length <= MAX_CHARS) { tr("text_too_long", MAX_CHARS / 1_000_000) }
             val id = UUID.randomUUID().toString().take(12)
             File(dir, "$id.txt").writeText(text)
             val title = parsed.title.takeIf { it.length in 3..200 && !it.equals("untitled", true) }

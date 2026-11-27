@@ -1,6 +1,7 @@
 package com.veritas.localresearch.ui
 
 import androidx.compose.foundation.background
+import com.veritas.localresearch.i18n.tr
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -54,7 +55,7 @@ fun PipelineProgressCard(progress: PipelineProgress) {
                     Icon(Icons.Default.CheckCircle, contentDescription = null, tint = VerifiedGreen)
                 }
                 Text(
-                    text = "${progress.stageTitle} (Runde ${progress.currentRound}/${progress.maxRounds})",
+                    text = tr("round_of", progress.stageTitle, progress.currentRound, progress.maxRounds),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -67,12 +68,12 @@ fun PipelineProgressCard(progress: PipelineProgress) {
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 val n = progress.scrapedDomains.size
-                AssistChip(onClick = {}, label = { Text(if (n == 1) "1 Quelle" else "$n Quellen") })
-                AssistChip(onClick = {}, label = { Text("${progress.chunkCount} Abschnitte") })
+                AssistChip(onClick = {}, label = { Text(if (n == 1) tr("sources_one") else tr("sources_n", n)) })
+                AssistChip(onClick = {}, label = { Text(tr("sections_n", progress.chunkCount)) })
                 if (progress.verifiedClaimsCount > 0 || progress.rejectedClaimsCount > 0) {
                     AssistChip(
                         onClick = {},
-                        label = { Text("${progress.verifiedClaimsCount} geprüft / ${progress.rejectedClaimsCount} verworfen") }
+                        label = { Text(tr("checked_rejected", progress.verifiedClaimsCount, progress.rejectedClaimsCount)) }
                     )
                 }
             }
@@ -166,8 +167,7 @@ fun VerifiedAnswerCard(
             ) {
                 Icon(Icons.Default.Verified, contentDescription = null, tint = VerifiedGreen, modifier = Modifier.size(18.dp))
                 Text(
-                    text = "${report.verifiedClaims.size} zitatgeprüfte Fakten ($multiSourceCount mehrfach bestätigt) • " +
-                        "${report.rejectedClaimCount} verworfen • ${report.unverifiedNumbers.size} gelbe Warnungen",
+                    text = tr("status_bar", report.verifiedClaims.size, multiSourceCount, report.rejectedClaimCount, report.unverifiedNumbers.size),
                     style = MaterialTheme.typography.labelMedium
                 )
             }
@@ -186,7 +186,7 @@ fun VerifiedAnswerCard(
             TextButton(onClick = { clipboard.setText(AnnotatedString(plainCopy(report))) }) {
                 Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Antwort mit Quellen kopieren")
+                Text(tr("copy_answer"))
             }
 
             // Warnbanner, falls unbelegte Zahlen gefunden wurden
@@ -202,7 +202,7 @@ fun VerifiedAnswerCard(
                 ) {
                     Icon(Icons.Default.Warning, contentDescription = null, tint = WarningYellowText)
                     Text(
-                        text = "Gelb markierte Zahlen wurden in keiner geladenen Quelle gefunden. Tippe auf eine Zahl für Details.",
+                        text = tr("yellow_banner"),
                         style = MaterialTheme.typography.bodySmall,
                         color = WarningYellowText
                     )
@@ -212,7 +212,7 @@ fun VerifiedAnswerCard(
             // Quellen-Uebersicht (Click-to-Passage)
             if (report.verifiedClaims.isNotEmpty()) {
                 HorizontalDivider()
-                Text("Belegte Quellen (Antippen für exakte Textpassage):", style = MaterialTheme.typography.labelLarge)
+                Text(tr("cited_sources"), style = MaterialTheme.typography.labelLarge)
                 report.verifiedClaims.distinctBy { it.citationIndex }.forEach { vc ->
                     Row(
                         modifier = Modifier
@@ -235,9 +235,9 @@ fun VerifiedAnswerCard(
                                 text = buildString {
                                     append(vc.chunk.domain)
                                     if (vc.trustLevel == TrustLevel.MULTI_SOURCE) {
-                                        append(" • bestätigt durch +${vc.corroboratingDomains.size} weitere Domain(s)")
+                                        append(" • " + tr("confirmed_by", vc.corroboratingDomains.size))
                                     } else {
-                                        append(" • Einzelquelle")
+                                        append(" • " + tr("single_source"))
                                     }
                                 },
                                 style = MaterialTheme.typography.labelSmall,
@@ -298,18 +298,18 @@ fun ClickToPassageSheet(
                     label = {
                         Text(
                             if (claim.trustLevel == TrustLevel.MULTI_SOURCE)
-                                "Cross-Source (+${claim.corroboratingDomains.size})"
-                            else "Einzelquelle"
+                                tr("cross_source", claim.corroboratingDomains.size)
+                            else tr("single_source")
                         )
                     }
                 )
-                AssistChip(onClick = {}, label = { Text("Zitat-Match ${(claim.quoteMatchScore * 100).toInt()}%") })
+                AssistChip(onClick = {}, label = { Text(tr("quote_match", (claim.quoteMatchScore * 100).toInt())) })
             }
 
-            Text("Extrahierte Aussage:", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Text(tr("extracted_claim"), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
             Text(claim.claim, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium)
 
-            Text("Exakte Original-Passage (Chunk #${claim.chunk.chunkId}):", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+            Text(tr("orig_passage", claim.chunk.chunkId), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
 
             Surface(
                 shape = RoundedCornerShape(12.dp),
@@ -334,7 +334,7 @@ fun ClickToPassageSheet(
             ) {
                 Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("Original-Website im Browser öffnen")
+                Text(tr("open_website"))
             }
             Spacer(Modifier.height(20.dp))
         }
@@ -345,7 +345,7 @@ fun ClickToPassageSheet(
 private fun plainCopy(report: ResearchReport): String = buildString {
     append(report.synthesizedAnswer)
     if (report.verifiedClaims.isNotEmpty()) {
-        append("\n\nQuellen:\n")
+        append("\n\n" + tr("sources_label") + "\n")
         report.verifiedClaims.distinctBy { it.citationIndex }.forEach { vc ->
             val where = if (vc.chunk.sourceType == com.veritas.localresearch.domain.SourceType.LOCAL)
                 listOfNotNull(vc.chunk.domain, pageLabel(vc.chunk)).joinToString(", ") else vc.chunk.url
@@ -357,7 +357,7 @@ private fun plainCopy(report: ResearchReport): String = buildString {
 /** "S. 4" bzw. "S. 4–5" fuer Abschnitte eigener PDF-Dokumente, sonst null. */
 fun pageLabel(c: com.veritas.localresearch.domain.TextChunk): String? = when {
     c.page <= 0 -> null
-    c.pageEnd > c.page -> "S. ${c.page}–${c.pageEnd}"
-    else -> "S. ${c.page}"
+    c.pageEnd > c.page -> tr("pages_range", c.page, c.pageEnd)
+    else -> tr("page", c.page)
 }
 

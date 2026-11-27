@@ -1,6 +1,7 @@
 package com.veritas.localresearch.llm
 
 import android.app.ActivityManager
+import com.veritas.localresearch.i18n.tr
 import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.CancellationException
@@ -17,6 +18,8 @@ import kotlin.coroutines.coroutineContext
 data class ModelPreset(
     val id: String,
     val displayName: String,
+    /** Schluessel der Kurzbeschreibung in den Sprachtabellen. */
+    val noteKey: String = "",
     val fileName: String,
     val downloadUrl: String,
     val approxSizeMb: Int,
@@ -26,7 +29,9 @@ data class ModelPreset(
     /** Dateiname des Tokenizers (vocab.txt fuer WordPiece, tokenizer.json fuer SentencePiece). */
     val vocabFileName: String = "minilm_vocab.txt",
     val isReranker: Boolean = false
-)
+) {
+    val label: String get() = if (noteKey.isEmpty()) displayName else "$displayName • ${tr(noteKey)}"
+}
 
 class ModelManager(private val context: Context) {
 
@@ -41,7 +46,8 @@ class ModelManager(private val context: Context) {
     val presets: List<ModelPreset> = listOf(
         ModelPreset(
             id = "qwen3-0.6b",
-            displayName = "Qwen3 0.6B (Q4_K_M) • Sehr schnell, weniger genau, ab 3 GB RAM",
+            displayName = "Qwen3 0.6B (Q4_K_M)",
+            noteKey = "m_qwen06",
             fileName = "Qwen3-0.6B-Q4_K_M.gguf",
             downloadUrl = "https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-Q4_K_M.gguf",
             approxSizeMb = 400,
@@ -49,7 +55,8 @@ class ModelManager(private val context: Context) {
         ),
         ModelPreset(
             id = "qwen3-1.7b",
-            displayName = "Qwen3 1.7B (Q4_K_M) • Empfohlen ab 6 GB RAM",
+            displayName = "Qwen3 1.7B (Q4_K_M)",
+            noteKey = "m_qwen17",
             fileName = "Qwen3-1.7B-Q4_K_M.gguf",
             downloadUrl = "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf",
             approxSizeMb = 1110,
@@ -57,7 +64,8 @@ class ModelManager(private val context: Context) {
         ),
         ModelPreset(
             id = "qwen3-4b",
-            displayName = "Qwen3 4B (Q4_K_M) • Hohe Präzision ab 8 GB RAM",
+            displayName = "Qwen3 4B (Q4_K_M)",
+            noteKey = "m_qwen4",
             fileName = "Qwen3-4B-Q4_K_M.gguf",
             downloadUrl = "https://huggingface.co/Qwen/Qwen3-4B-GGUF/resolve/main/Qwen3-4B-Q4_K_M.gguf",
             approxSizeMb = 2500,
@@ -65,7 +73,8 @@ class ModelManager(private val context: Context) {
         ),
         ModelPreset(
             id = "qwen3.5-2b",
-            displayName = "Qwen3.5 2B (Q4_K_M) • Neuer, ab 6 GB RAM • Apache-2.0",
+            displayName = "Qwen3.5 2B (Q4_K_M)",
+            noteKey = "m_qwen35_2",
             fileName = "Qwen3.5-2B-Q4_K_M.gguf",
             downloadUrl = "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf",
             approxSizeMb = 1280,
@@ -73,7 +82,8 @@ class ModelManager(private val context: Context) {
         ),
         ModelPreset(
             id = "qwen3.5-4b",
-            displayName = "Qwen3.5 4B (Q4_K_M) • Flüssigste Antworten, ab 8 GB RAM • Apache-2.0",
+            displayName = "Qwen3.5 4B (Q4_K_M)",
+            noteKey = "m_qwen35_4",
             fileName = "Qwen3.5-4B-Q4_K_M.gguf",
             downloadUrl = "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf",
             approxSizeMb = 2741,
@@ -81,7 +91,8 @@ class ModelManager(private val context: Context) {
         ),
         ModelPreset(
             id = "nemotron3-nano-4b",
-            displayName = "NVIDIA Nemotron 3 Nano 4B (Q4_K_M) • ab 8 GB RAM • NVIDIA Open Model License",
+            displayName = "NVIDIA Nemotron 3 Nano 4B (Q4_K_M)",
+            noteKey = "m_nemotron",
             fileName = "NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf",
             downloadUrl = "https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-GGUF/resolve/main/NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf",
             approxSizeMb = 2837,
@@ -89,7 +100,8 @@ class ModelManager(private val context: Context) {
         ),
         ModelPreset(
             id = "lfm3-1.7b",
-            displayName = "Liquid LFM3 1.7B (Q4_K_M) • Sehr schnell, ab 4 GB RAM • LFM Open License (bis 10 Mio. USD Umsatz)",
+            displayName = "Liquid LFM3 1.7B (Q4_K_M)",
+            noteKey = "m_lfm",
             fileName = "LFM3-1.7B-Q4_K_M.gguf",
             downloadUrl = "https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF/resolve/main/LFM3-1.7B-Q4_K_M.gguf",
             approxSizeMb = 1100,
@@ -97,7 +109,8 @@ class ModelManager(private val context: Context) {
         ),
         ModelPreset(
             id = "e5-small-onnx",
-            displayName = "multilingual-e5-small (ONNX Quantized) • Mehrsprachige Embeddings, empfohlen",
+            displayName = "multilingual-e5-small (ONNX Quantized)",
+            noteKey = "m_e5s",
             fileName = "multilingual_e5_small_qint8.onnx",
             downloadUrl = "https://huggingface.co/Xenova/multilingual-e5-small/resolve/main/onnx/model_quantized.onnx",
             approxSizeMb = 135,
@@ -108,7 +121,8 @@ class ModelManager(private val context: Context) {
         ),
         ModelPreset(
             id = "e5-base-onnx",
-            displayName = "multilingual-e5-base (ONNX Quantized) • Genauer bei großen Büchern, Import etwa 3× langsamer",
+            displayName = "multilingual-e5-base (ONNX Quantized)",
+            noteKey = "m_e5b",
             fileName = "multilingual_e5_base_qint8.onnx",
             downloadUrl = "https://huggingface.co/Xenova/multilingual-e5-base/resolve/main/onnx/model_quantized.onnx",
             approxSizeMb = 280,
@@ -119,7 +133,8 @@ class ModelManager(private val context: Context) {
         ),
         ModelPreset(
             id = "mmarco-reranker-onnx",
-            displayName = "mmarco-mMiniLMv2-L12 (ONNX int8) • Reranker, mehrsprachig",
+            displayName = "mmarco-mMiniLMv2-L12 (ONNX int8)",
+            noteKey = "m_mmarco",
             fileName = "mmarco_reranker_qint8.onnx",
             downloadUrl = "https://huggingface.co/cross-encoder/mmarco-mMiniLMv2-L12-H384-v1/resolve/main/onnx/model_qint8_arm64.onnx",
             approxSizeMb = 136,
@@ -130,7 +145,8 @@ class ModelManager(private val context: Context) {
         ),
         ModelPreset(
             id = "minilm-onnx",
-            displayName = "all-MiniLM-L6-v2 (ONNX Quantized) • Nur Englisch, klein",
+            displayName = "all-MiniLM-L6-v2 (ONNX Quantized)",
+            noteKey = "m_minilm",
             fileName = "minilm_l6_v2_qint8.onnx",
             downloadUrl = "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model_quantized.onnx",
             approxSizeMb = 23,
@@ -206,7 +222,7 @@ class ModelManager(private val context: Context) {
                         out.write(buffer, 0, n)
                     }
                 }
-            } ?: error("Datei konnte nicht gelesen werden")
+            } ?: error(tr("model_unreadable"))
             moveFileAtomically(tmp, dest)
             Result.success(dest)
         } catch (e: CancellationException) {
@@ -224,8 +240,8 @@ class ModelManager(private val context: Context) {
         val call = client.newCall(req)
         try {
             call.execute().use { resp ->
-                if (!resp.isSuccessful) error("HTTP ${resp.code} beim Download von $url")
-                val body = resp.body ?: error("Leerer Response-Body")
+                if (!resp.isSuccessful) error(tr("dl_http", resp.code, url))
+                val body = resp.body ?: error(tr("dl_empty_body"))
                 val total = body.contentLength()
                 body.byteStream().use { input ->
                     FileOutputStream(tmp).use { out ->
@@ -246,12 +262,12 @@ class ModelManager(private val context: Context) {
                                 }
                             }
                         }
-                        if (total > 0 && readTotal != total) error("Download unvollständig ($readTotal von $total Bytes)")
+                        if (total > 0 && readTotal != total) error(tr("dl_incomplete", readTotal, total))
                     }
                 }
             }
             // Abgebrochene Verbindung: lieber Fehler als ein halbes Modell, das spaeter nicht laedt
-            if (tmp.length() == 0L) error("Leere Datei von $url")
+            if (tmp.length() == 0L) error(tr("dl_empty", url))
             moveFileAtomically(tmp, target)
             onProgress(1f)
         } catch (e: CancellationException) {
@@ -266,7 +282,7 @@ class ModelManager(private val context: Context) {
 
     private fun moveFileAtomically(tmp: File, target: File) {
         if (target.exists() && !target.delete()) {
-            error("Konnte bestehende Datei ${target.name} nicht ersetzen")
+            error(tr("replace_fail", target.name))
         }
         if (!tmp.renameTo(target)) {
             tmp.copyTo(target, overwrite = true)

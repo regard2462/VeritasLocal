@@ -28,8 +28,13 @@ private val LightColors = lightColorScheme(
 
 @Composable
 fun VeritasTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
-        content = content
-    )
+    // Arabisch und Hebraeisch laufen von rechts nach links, auch wenn die Sprache nur in der App gewaehlt ist
+    val direction = if (com.veritas.localresearch.i18n.I18n.current.rtl) androidx.compose.ui.unit.LayoutDirection.Rtl
+        else androidx.compose.ui.unit.LayoutDirection.Ltr
+    androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalLayoutDirection provides direction) {
+        MaterialTheme(
+            colorScheme = if (isSystemInDarkTheme()) DarkColors else LightColors,
+            content = content
+        )
+    }
 }

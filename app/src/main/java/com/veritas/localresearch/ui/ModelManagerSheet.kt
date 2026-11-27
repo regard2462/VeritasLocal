@@ -1,6 +1,7 @@
 package com.veritas.localresearch.ui
 
 import android.content.Context
+import com.veritas.localresearch.i18n.tr
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -51,10 +52,9 @@ fun ModelManagerSheet(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("Lokale Modelle (On-Device)", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(tr("models_title"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(
-                text = "Erkannter Geräte-RAM: ~${uiState.deviceRamGb} GB • " +
-                    "Empfohlen: ${if (uiState.deviceRamGb >= 8) "Qwen3 4B (Q4_K_M)" else "Qwen3 1.7B (Q4_K_M)"} + multilingual-e5-small",
+                text = tr("ram_info", uiState.deviceRamGb, if (uiState.deviceRamGb >= 8) "Qwen3 4B (Q4_K_M)" else "Qwen3 1.7B (Q4_K_M)"),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -71,36 +71,36 @@ fun ModelManagerSheet(
 
                 ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(preset.displayName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                        Text("Größe: ~${preset.approxSizeMb} MB • Mind. ${preset.minRamGb} GB RAM", style = MaterialTheme.typography.bodySmall)
+                        Text(preset.label, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text(tr("size_info", preset.approxSizeMb, preset.minRamGb), style = MaterialTheme.typography.bodySmall)
 
                         if (dlProgress != null) {
                             LinearProgressIndicator(progress = { dlProgress }, modifier = Modifier.fillMaxWidth())
-                            Text("Lädt herunter… ${(dlProgress * 100).toInt()}%", style = MaterialTheme.typography.labelSmall)
+                            Text(tr("downloading", (dlProgress * 100).toInt()), style = MaterialTheme.typography.labelSmall)
                         } else {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                 if (!installed) {
                                     Button(onClick = { onDownloadPreset(preset) }) {
                                         Icon(Icons.Default.Download, contentDescription = null)
                                         Spacer(Modifier.width(6.dp))
-                                        Text("Herunterladen")
+                                        Text(tr("download"))
                                     }
                                 } else if (isActive) {
                                     AssistChip(
                                         onClick = {},
                                         leadingIcon = { Icon(Icons.Default.CheckCircle, contentDescription = null, tint = VerifiedGreen) },
-                                        label = { Text("Aktiv geladen") }
+                                        label = { Text(tr("active_loaded")) }
                                     )
                                 } else if (preset.isEmbedding || preset.isReranker) {
                                     Button(onClick = { onLoadEmbedding(preset) }) {
-                                        Text(if (preset.isReranker) "Reranker laden" else "Embeddings laden")
+                                        Text(if (preset.isReranker) tr("load_reranker") else tr("load_embeddings"))
                                     }
                                 } else {
                                     Button(
                                         onClick = { onLoadGguf(file) },
                                         enabled = !uiState.isModelLoading
                                     ) {
-                                        Text("Modell laden")
+                                        Text(tr("load_model"))
                                     }
                                 }
                             }
@@ -116,11 +116,11 @@ fun ModelManagerSheet(
             ) {
                 Icon(Icons.Default.FolderOpen, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text("Eigene lokale .gguf-Datei importieren (z. B. Gemma 4 E4B)")
+                Text(tr("import_gguf"))
             }
 
             if (uiState.localGgufFiles.isNotEmpty()) {
-                Text("Lokale GGUF-Dateien:", style = MaterialTheme.typography.labelLarge)
+                Text(tr("local_gguf"), style = MaterialTheme.typography.labelLarge)
                 uiState.localGgufFiles.forEach { file ->
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -132,7 +132,7 @@ fun ModelManagerSheet(
                             onClick = { onLoadGguf(file) },
                             enabled = !uiState.isModelLoading
                         ) {
-                            Text(if (uiState.loadedLlmName == file.name) "Aktiv" else "Laden")
+                            Text(if (uiState.loadedLlmName == file.name) tr("active") else tr("load"))
                         }
                     }
                 }

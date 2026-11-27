@@ -1,6 +1,7 @@
 package com.veritas.localresearch.llm
 
 import kotlinx.coroutines.Dispatchers
+import com.veritas.localresearch.i18n.tr
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
@@ -176,7 +177,7 @@ class LlamaEngine(private val nativeLibDir: String) {
     ): String = withContext(Dispatchers.Default) {
         nativeLock.withLock {
             val h = handle
-            if (closed.get() || h == 0L) error("Kein lokales GGUF-Modell geladen.")
+            if (closed.get() || h == 0L) error(tr("no_model"))
             val prompt = formatChatPrompt(systemPrompt, userPrompt, disableThinking = true)
             val callback = onToken?.let { fn ->
                 object : TokenCallback {

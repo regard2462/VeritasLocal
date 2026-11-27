@@ -8,7 +8,7 @@ plugins {
 }
 
 // Muss zu versionName in app/build.gradle.kts passen
-val vlVersion = "1.4.0"
+val vlVersion = "1.5.0"
 
 // Gemeinsamer Code liegt im Android-Modul. Was nur auf Android laeuft, bleibt draussen; die Gegenstuecke liegen in
 // src/main/kotlin (schmale Ersatzklassen fuer android.*, Fenster, Dateidialog).

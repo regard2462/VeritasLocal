@@ -1,18 +1,22 @@
 package com.veritas.localresearch.export
 
 import com.veritas.localresearch.domain.SourceType
+import com.veritas.localresearch.i18n.tr
 import com.veritas.localresearch.domain.VerifiedClaim
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
 /** Zitierstile fuer den Export. [numeric]: Nummern im Text, Verzeichnis nach Reihenfolge; sonst Autor-Jahr, alphabetisch. */
-enum class CitationStyle(val label: String, val numeric: Boolean) {
+enum class CitationStyle(private val key: String, val numeric: Boolean) {
     APA7("APA 7", false),
     HARVARD("Harvard", false),
-    CHICAGO("Chicago (Autor-Jahr)", false),
+    CHICAGO("cs_chicago", false),
     IEEE("IEEE", true),
-    DIN_ISO_690("DIN ISO 690 (numerisch)", true)
+    DIN_ISO_690("cs_din", true);
+
+    /** Name in der Sprache der Oberflaeche; Eigennamen ohne Uebersetzung bleiben wie sie sind. */
+    val label: String get() = tr(key)
 }
 
 /** Textstueck mit Auszeichnung; [link] ist eine Webadresse. */

@@ -1,6 +1,7 @@
 package androidx.activity.result.contract
 
 import android.net.Uri
+import com.veritas.localresearch.i18n.tr
 import java.awt.FileDialog
 import java.awt.Frame
 import java.io.File
@@ -14,7 +15,7 @@ object ActivityResultContracts {
     /** Datei oeffnen; die Eingabe sind MIME-Typen (auf dem Desktop ohne Filter). */
     class OpenDocument : ActivityResultContract<Array<String>, Uri?>() {
         override fun run(input: Array<String>): Uri? {
-            val d = FileDialog(null as Frame?, "Datei öffnen", FileDialog.LOAD)
+            val d = FileDialog(null as Frame?, tr("dlg_open"), FileDialog.LOAD)
             d.isVisible = true
             val name = d.file ?: return null
             return Uri.fromFile(File(d.directory, name))
@@ -24,7 +25,7 @@ object ActivityResultContracts {
     /** Datei speichern; die Eingabe ist der vorgeschlagene Dateiname. */
     class CreateDocument(private val mime: String) : ActivityResultContract<String, Uri?>() {
         override fun run(input: String): Uri? {
-            val d = FileDialog(null as Frame?, "Speichern unter", FileDialog.SAVE)
+            val d = FileDialog(null as Frame?, tr("dlg_save"), FileDialog.SAVE)
             d.file = input
             d.isVisible = true
             val name = d.file ?: return null

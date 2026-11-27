@@ -1,6 +1,7 @@
 package com.veritas.localresearch.verification
 
 import com.veritas.localresearch.domain.RawClaimDto
+import com.veritas.localresearch.i18n.tr
 import com.veritas.localresearch.domain.TextChunk
 import com.veritas.localresearch.domain.TrustLevel
 import com.veritas.localresearch.domain.UnverifiedNumberSpan
@@ -320,7 +321,7 @@ class DeterministicVerifier {
                     UnverifiedNumberSpan(
                         text = rawToken,
                         range = range,
-                        reason = "Der Wert „$rawToken“ wurde in keiner der geladenen Quellen gefunden."
+                        reason = tr("warn_reason", rawToken)
                     )
                 )
             }
@@ -573,7 +574,9 @@ class DeterministicVerifier {
                 val end = bare.lastOrNull()
                 keepOrQuote(if (end == '.' || end == '!' || end == '?') bare.dropLast(1).trimEnd() + " [${best.key}]" + end
                 else "$bare [${best.key}]", listOf(best.key))
-            }.mapNotNull { s ->
+            }.mapNotNull { raw ->
+                // Aufzaehlungszeichen aus der Quelle ("• Mehr Forschung …", "*Viele Geraete …") gehoeren nicht in den Satz
+                val s = raw.replace(LEADING_BULLET_REGEX, "").ifEmpty { return@mapNotNull null }
                 val cites = SINGLE_CITATION_REGEX.findAll(s).mapNotNull { it.groupValues[1].toIntOrNull() }.filter { it in refs }.toList()
                 // "…, die zwar oft in Handbüchern nachzulesen sind." ohne das "aber": der Quellsatz mit beiden Teilen
                 val whole = if (HALF_CONCESSION_REGEX.containsMatchIn(s) && !CONCESSION_COUNTER_REGEX.containsMatchIn(s)) {
@@ -586,17 +589,32 @@ class DeterministicVerifier {
                 fixDangling(whole, cites)?.also { sectionStart = false }
             }.filter { sentence ->
                 // Inhaltlich gleiche Saetze nur einmal
-                val st = contentStems(SINGLE_CITATION_REGEX.replace(sentence, " ")).toSet()
-                // Fast gleich, oder ganz in einem frueheren Satz enthalten
-                val dup = seenSentences.any { (prev, _) ->
+                val plain = SINGLE_CITATION_REGEX.replace(sentence, " ")
+                val st = contentStems(plain).toSet()
+                val nums = FINDING_NUMBER_REGEX.findAll(plain).map { it.value }.toList()
+                // Derselbe Befund anders formuliert: mindestens drei gleiche Zahlen (mit Wiederholung, "8 kWp ... 8 kWh")
+                // und deutlich gleicher Wortschatz
+                fun sameFinding(prev: Set<String>, text: String): Boolean {
+                    if (nums.size < 3) return false
+                    val other = FINDING_NUMBER_REGEX.findAll(SINGLE_CITATION_REGEX.replace(text, " ")).map { it.value }
+                        .groupingBy { it }.eachCount()
+                    val common = nums.groupingBy { it }.eachCount().entries.sumOf { (n, c) -> minOf(c, other[n] ?: 0) }
+                    if (common < 3) return false
+                    val inter = prev.intersect(st).size.toFloat()
+                    return inter / (prev.size + st.size - inter).coerceAtLeast(1f) >= 0.3f
+                }
+                // Fast gleich, oder ganz in einem frueheren Satz enthalten, oder derselbe Befund ohne Neues
+                val dup = seenSentences.any { (prev, text) ->
                     val inter = prev.intersect(st).size.toFloat()
                     inter / (prev.size + st.size - inter).coerceAtLeast(1f) >= 0.75f ||
-                        (st.size >= 3 && inter / st.size >= 0.85f)
+                        (st.size >= 3 && inter / st.size >= 0.85f) ||
+                        (st.size <= prev.size && sameFinding(prev, text))
                 }
                 if (dup) { onDrop("doppelt: $sentence"); return@filter false }
-                // Ein frueherer Satz steckt ganz in diesem vollstaendigeren: der fruehere entfaellt
+                // Ein frueherer Satz steckt ganz in diesem vollstaendigeren (oder sagt dasselbe knapper): der fruehere entfaellt
                 seenSentences.filter { (prev, text) ->
-                    prev.size >= 3 && text !in superseded && prev.count { it in st }.toFloat() / prev.size >= 0.85f
+                    prev.size >= 3 && text !in superseded &&
+                        (prev.count { it in st }.toFloat() / prev.size >= 0.85f || (st.size > prev.size && sameFinding(prev, text)))
                 }.forEach { (_, text) -> superseded.add(text); onDrop("doppelt (vollständiger später): $text") }
                 seenSentences.add(st to sentence)
                 true
@@ -948,7 +966,15 @@ class DeterministicVerifier {
         val BADGE_REGEX = Regex("\\[(?:\\d+ QUELLEN?|MEHRERE QUELLEN|EINZELQUELLE)\\]", RegexOption.IGNORE_CASE)
         val LABELED_QUOTE_REGEX = Regex("\\(?\\s*(?:Zitat|Beleg|Quelle|Quote)\\s*:?\\s*[„\"“][^“”\"]*[“”\"]\\s*\\)?", RegexOption.IGNORE_CASE)
         val INLINE_QUOTE_REGEX = Regex("[„\"“]([^“”\"]{25,})[“”\"]")
-        val SENTENCE_SPLIT_REGEX = Regex("(?<=\\p{L}{2}[.!?]|[\\])\\d][.!?])\\s+(?=[\\p{Lu}\\[(„\"])")
+        /** Aufzaehlungszeichen am Satzanfang: *, •, ·, ▪, ►, ‣, oder ein Strich mit Leerzeichen danach. */
+        val LEADING_BULLET_REGEX = Regex("^(?:[*•·▪►‣◦]+\\s*|[-–—]\\s+)+")
+
+        /** Zahlen eines Satzes (35, 1.6, 2024) fuer den Vergleich gleicher Befunde. */
+        val FINDING_NUMBER_REGEX = Regex("\\d+(?:[.,]\\d+)?")
+
+        // Satzenden auch ohne Grossbuchstaben (Arabisch, Hebraeisch, Hindi, Thai, CJK) und ohne Leerzeichen (。！？)
+        val SENTENCE_SPLIT_REGEX = Regex("(?<=\\p{L}{2}[.!?]|[\\])\\d][.!?])\\s+(?=[\\p{Lu}\\[(„\"])|(?<=[。！？])\\s*(?=\\S)|" +
+            "(?<=[.!?؟।])\\s+(?=[\\u0600-\\u06FF\\u0590-\\u05FF\\u0900-\\u097F\\u0E00-\\u0E7F\\u3400-\\u9FFF\\u3040-\\u30FF\\uAC00-\\uD7AF])")
         // Fuellwoerter ab 4 Buchstaben (Deutsch, Englisch), die nichts ueber den Inhalt sagen
         val STOPWORDS = setOf(
             "dass", "eine", "einer", "einem", "einen", "eines", "sind", "wird", "werden", "wurde", "wurden", "auch", "sich",

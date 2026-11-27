@@ -1,6 +1,7 @@
 package com.veritas.localresearch.ui
 
 import androidx.compose.foundation.clickable
+import com.veritas.localresearch.i18n.tr
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -29,11 +30,14 @@ fun SettingsSheet(viewModel: ResearchViewModel, onDismiss: () -> Unit) {
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text("Einstellungen", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text(tr("settings"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 
-            Text("Suchmaschinen", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            LanguagePicker(settings.uiLanguage) { code -> viewModel.updateSettings { it.copy(uiLanguage = code) } }
+
+            HorizontalDivider()
+            Text(tr("engines"), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             Text(
-                "Reihum gefragt, jede mit eigenem Minutenbudget. Bei Drosselung oder Captcha pausiert sie ab 15 Minuten.",
+                tr("engines_info"),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -50,7 +54,7 @@ fun SettingsSheet(viewModel: ResearchViewModel, onDismiss: () -> Unit) {
                                 TextButton(
                                     onClick = { viewModel.clearEngineCooldown(engine); refresh++ },
                                     contentPadding = PaddingValues(0.dp)
-                                ) { Text("Pausiert noch ${coolMin + 1} min • Pause aufheben") }
+                                ) { Text(tr("paused", coolMin + 1)) }
                             }
                         }
                         Switch(
@@ -68,7 +72,7 @@ fun SettingsSheet(viewModel: ResearchViewModel, onDismiss: () -> Unit) {
                 OutlinedTextField(
                     value = settings.searxngUrl,
                     onValueChange = { v -> viewModel.updateSettings { it.copy(searxngUrl = v.trim()) } },
-                    label = { Text("Adresse der SearXNG-Instanz") },
+                    label = { Text(tr("searxng_url")) },
                     placeholder = { Text("https://searx.example.org") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
@@ -77,15 +81,15 @@ fun SettingsSheet(viewModel: ResearchViewModel, onDismiss: () -> Unit) {
             }
 
             HorizontalDivider()
-            Text("Direkte Quellen", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(tr("direct_sources"), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             SettingSwitch("Wikipedia", settings.useWikipedia) { on -> viewModel.updateSettings { it.copy(useWikipedia = on) } }
-            SettingSwitch("arXiv (Fachaufsätze, nur englische Fragen)", settings.useArxiv) { on -> viewModel.updateSettings { it.copy(useArxiv = on) } }
+            SettingSwitch(tr("arxiv"), settings.useArxiv) { on -> viewModel.updateSettings { it.copy(useArxiv = on) } }
 
             HorizontalDivider()
-            Text("Recherche", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Text("Standardtiefe", style = MaterialTheme.typography.bodyMedium)
+            Text(tr("research_hdr"), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(tr("default_depth"), style = MaterialTheme.typography.bodyMedium)
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf(1 to "Schnell", 2 to "Standard", 3 to "Tief").forEach { (d, label) ->
+                listOf(1 to tr("depth_fast"), 2 to tr("depth_std"), 3 to tr("depth_deep")).forEach { (d, label) ->
                     FilterChip(
                         selected = settings.defaultDepth == d,
                         onClick = { viewModel.updateSettings { it.copy(defaultDepth = d) }; viewModel.onMaxRoundsChange(d) },
@@ -94,18 +98,18 @@ fun SettingsSheet(viewModel: ResearchViewModel, onDismiss: () -> Unit) {
                 }
             }
             if (viewModel.gpuName.isNotEmpty()) {
-                SettingSwitch("Grafikkarte nutzen (${viewModel.gpuName})", settings.useGpu) { on -> viewModel.setUseGpu(on) }
+                SettingSwitch(tr("use_gpu", viewModel.gpuName), settings.useGpu) { on -> viewModel.setUseGpu(on) }
             }
-            SettingSwitch("Reranker nutzen (wenn geladen)", settings.useReranker) { on ->
+            SettingSwitch(tr("use_reranker"), settings.useReranker) { on ->
                 viewModel.updateSettings { it.copy(useReranker = on) }
             }
-            SettingSwitch("Dauer je Stufe unter der Antwort zeigen", settings.showTimings) { on ->
+            SettingSwitch(tr("show_timings"), settings.showTimings) { on ->
                 viewModel.updateSettings { it.copy(showTimings = on) }
             }
 
             HorizontalDivider()
-            Text("Export (PDF, DOCX, ODT)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-            Text("Zitierstil", style = MaterialTheme.typography.bodyMedium)
+            Text(tr("export_hdr"), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(tr("cite_style"), style = MaterialTheme.typography.bodyMedium)
             com.veritas.localresearch.export.CitationStyle.entries.forEach { style ->
                 Row(
                     modifier = Modifier
@@ -122,6 +126,27 @@ fun SettingsSheet(viewModel: ResearchViewModel, onDismiss: () -> Unit) {
             }
 
             Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+/** Sprache der Oberflaeche; [selected] leer = Systemsprache. */
+@Composable
+private fun LanguagePicker(selected: String, onSelect: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val langs = com.veritas.localresearch.i18n.I18n.LANGUAGES
+    val systemName = langs.first { it.code == com.veritas.localresearch.i18n.I18n.systemCode() }.nativeName
+    val currentName = langs.firstOrNull { it.code == selected }?.nativeName ?: tr("lang_system", systemName)
+    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Text(tr("language"), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+        Box {
+            OutlinedButton(onClick = { open = true }) { Text(currentName) }
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                DropdownMenuItem(text = { Text(tr("lang_system", systemName)) }, onClick = { open = false; onSelect("") })
+                langs.forEach { l ->
+                    DropdownMenuItem(text = { Text(l.nativeName) }, onClick = { open = false; onSelect(l.code) })
+                }
+            }
         }
     }
 }

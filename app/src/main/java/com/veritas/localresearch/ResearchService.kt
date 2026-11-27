@@ -1,6 +1,7 @@
 package com.veritas.localresearch
 
 import android.Manifest
+import com.veritas.localresearch.i18n.tr
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -85,7 +86,7 @@ class ResearchService : Service() {
             Intent(this, ResearchService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this, CHANNEL_RUN)
             .setSmallIcon(R.drawable.ic_stat_veritas)
-            .setContentTitle(title.ifBlank { "Recherche läuft" })
+            .setContentTitle(title.ifBlank { tr("notif_running") })
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setOngoing(true)
@@ -93,7 +94,7 @@ class ResearchService : Service() {
             .setSilent(true)
             .setProgress(0, 0, true)
             .setContentIntent(openApp(this))
-            .addAction(0, "Stopp", stop)
+            .addAction(0, tr("stop"), stop)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
             .build()
     }
@@ -122,9 +123,9 @@ class ResearchService : Service() {
 
         fun ensureChannels(c: Context) {
             val nm = c.getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(NotificationChannel(CHANNEL_RUN, "Laufende Recherche", NotificationManager.IMPORTANCE_LOW)
+            nm.createNotificationChannel(NotificationChannel(CHANNEL_RUN, tr("ch_running"), NotificationManager.IMPORTANCE_LOW)
                 .apply { setSound(null, null); enableVibration(false) })
-            nm.createNotificationChannel(NotificationChannel(CHANNEL_DONE, "Fertige Recherche", NotificationManager.IMPORTANCE_DEFAULT))
+            nm.createNotificationChannel(NotificationChannel(CHANNEL_DONE, tr("ch_done"), NotificationManager.IMPORTANCE_DEFAULT))
         }
 
         /** Ergebnis melden; im Vordergrund sieht man es ohnehin, die Meldung stoert dort aber nicht. */

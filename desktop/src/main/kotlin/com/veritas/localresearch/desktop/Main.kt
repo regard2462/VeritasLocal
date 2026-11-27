@@ -62,7 +62,8 @@ private fun nativeDir(): String {
 /**
  * Start ohne Argumente: Fenster. Pruefstart ohne Fenster:
  * --autorun "<Frage>" --model <datei.gguf> [--depth 2] [--len LONG] [--tag name] [--shot bild.png] [--data ordner] [--log datei]
- *   [--doc datei.pdf] [--sources WEB|DOCS|BOTH]
+ *   [--doc datei.pdf] [--sources WEB|DOCS|BOTH] [--ui de|en|...] [--words 1500]
+ * Nur Bild der Startseite ohne Lauf: --uishot bild.png [--ui code] [--sources DOCS]
  */
 fun main(args: Array<String>) {
     val opts = args.toList().windowed(2, 1, partialWindows = false).filter { it[0].startsWith("--") }.associate { it[0] to it[1] }
@@ -72,6 +73,7 @@ fun main(args: Array<String>) {
     System.setProperty("veritas.nativeDir", nativeDir())
     val app = Application(dataDir())
     com.veritas.localresearch.docs.Ocr.engine = com.veritas.localresearch.docs.DesktopOcr()
+    opts["--uishot"]?.let { path -> exitProcess(uiShot(app, File(path), opts)) }
     val autorunQ = opts["--autorun"]
     if (autorunQ != null) {
         exitProcess(runAutorun(app, autorunQ, opts))
@@ -132,6 +134,8 @@ private fun runAutorun(app: Application, question: String, opts: Map<String, Str
     val store = ViewModelStore()
     val vm = withContext(Dispatchers.Main) { ResearchViewModel(app).also { store.put("research", it) } }
     withContext(Dispatchers.Main) {
+        opts["--ui"]?.let { code -> vm.updateSettings { it.copy(uiLanguage = code) } }
+        vm.updateSettings { it.copy(answerWords = opts["--words"]?.toIntOrNull() ?: 0) }
         opts["--len"]?.let { name ->
             AnswerLength.entries.firstOrNull { it.name == name }?.let { len -> vm.updateSettings { it.copy(answerLength = len) } }
         }
@@ -142,6 +146,22 @@ private fun runAutorun(app: Application, question: String, opts: Map<String, Str
     delay(1500)
     opts["--shot"]?.let { path -> withContext(Dispatchers.Main) { screenshot(app, vm, File(path)) } }
     withContext(Dispatchers.Main) { store.clear() }
+    0
+}
+
+/** Startseite in einer Sprache abbilden, ohne Modell und ohne Lauf (Pruefung der Uebersetzungen). */
+private fun uiShot(app: Application, file: File, opts: Map<String, String>): Int = runBlocking {
+    System.setProperty("java.awt.headless", "true")
+    val store = ViewModelStore()
+    withContext(Dispatchers.Main) {
+        val vm = ResearchViewModel(app).also { store.put("research", it) }
+        vm.updateSettings { s ->
+            s.copy(uiLanguage = opts["--ui"].orEmpty(),
+                sourceMode = com.veritas.localresearch.settings.SourceMode.entries.firstOrNull { it.name == opts["--sources"] } ?: s.sourceMode)
+        }
+        screenshot(app, vm, file)
+        store.clear()
+    }
     0
 }
 

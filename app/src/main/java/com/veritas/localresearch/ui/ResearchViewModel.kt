@@ -1,6 +1,7 @@
 package com.veritas.localresearch.ui
 
 import android.app.Application
+import com.veritas.localresearch.i18n.tr
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -198,7 +199,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                         loadLlmFile(file)
                     }
                 }.onFailure { err ->
-                    _uiState.update { it.copy(errorMessage = "Download fehlgeschlagen: ${err.message}") }
+                    _uiState.update { it.copy(errorMessage = tr("err_download", err.message)) }
                 }
             } catch (e: CancellationException) {
                 _uiState.update { it.copy(downloadProgress = it.downloadProgress - preset.id) }
@@ -211,7 +212,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
         if (preset.isReranker) {
             viewModelScope.launch {
                 val ok = reranker.load(modelManager.getFile(preset), modelManager.getVocabFile(preset))
-                _uiState.update { it.copy(rerankerLoaded = ok, errorMessage = if (!ok) "Reranker konnte nicht geladen werden." else null) }
+                _uiState.update { it.copy(rerankerLoaded = ok, errorMessage = if (!ok) tr("err_reranker") else null) }
             }
             return
         }
@@ -222,7 +223,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                 it.copy(
                     isEmbeddingLoaded = ok,
                     loadedEmbeddingId = if (ok) preset.id else null,
-                    errorMessage = if (!ok) "Embedding-Modell konnte nicht geladen werden." else null
+                    errorMessage = if (!ok) tr("err_embedding") else null
                 )
             }
         }
@@ -235,7 +236,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                 _uiState.update { it.copy(localGgufFiles = modelManager.listLocalGgufFiles()) }
                 loadLlmFile(file)
             }.onFailure { err ->
-                _uiState.update { it.copy(errorMessage = "Import fehlgeschlagen: ${err.message}") }
+                _uiState.update { it.copy(errorMessage = tr("err_import", err.message)) }
             }
         }
     }
@@ -262,7 +263,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                     isModelLoading = false,
                     loadedLlmName = llamaEngine.loadedModelName,
                     gpuInUse = llamaEngine.gpuInUse,
-                    errorMessage = if (!ok) "GGUF-Modell konnte nicht geladen werden (RAM prüfen)." else null
+                    errorMessage = if (!ok) tr("err_gguf") else null
                 )
             }
         }
@@ -274,12 +275,12 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
         val mode = settingsStore.current.sourceMode
         val docs = if (mode == com.veritas.localresearch.settings.SourceMode.WEB) emptyList() else docStore.docs.value.filter { it.selected }
         if (mode == com.veritas.localresearch.settings.SourceMode.DOCS && docs.isEmpty()) {
-            _uiState.update { it.copy(errorMessage = "Bitte zuerst ein Dokument hinzufügen und auswählen.") }
+            _uiState.update { it.copy(errorMessage = tr("need_doc")) }
             return
         }
         if (!llamaEngine.isLoaded) {
             _uiState.update {
-                it.copy(showModelManager = true, errorMessage = "Bitte zuerst ein lokales GGUF-Modell laden.")
+                it.copy(showModelManager = true, errorMessage = tr("need_model"))
             }
             return
         }
@@ -300,7 +301,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                         currentRound = 1,
                         maxRounds = it.maxRounds,
                         isRunning = true,
-                        stageTitle = "Starte lokale Recherche…"
+                        stageTitle = tr("starting")
                     )
                 )
             }
@@ -310,7 +311,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
             var lastUiPushMs = 0L
             var lastNotifyMs = 0L
             val shortQ = question.take(60)
-            BackgroundWork.hooks?.started("Recherche: $shortQ")
+            BackgroundWork.hooks?.started(tr("bg_research", shortQ))
 
             try {
                 // Jsoup, Chunking, BM25 und Verifikation laufen abseits des UI-Threads
@@ -322,7 +323,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                         val now = System.currentTimeMillis()
                         if (p.isRunning && now - lastNotifyMs >= 1500L) {
                             lastNotifyMs = now
-                            BackgroundWork.hooks?.progress("Recherche: $shortQ", p.stageTitle)
+                            BackgroundWork.hooks?.progress(tr("bg_research", shortQ), p.stageTitle)
                         }
                     },
                     onStreamToken = { tok ->
@@ -345,23 +346,23 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                     useWeb = mode != com.veritas.localresearch.settings.SourceMode.DOCS
                 ) }
                 _uiState.update { it.copy(report = report, streamingDraft = "") }
-                BackgroundWork.hooks?.finished("Antwort fertig", shortQ)
+                BackgroundWork.hooks?.finished(tr("answer_ready"), shortQ)
             } catch (e: CancellationException) {
                 BackgroundWork.hooks?.finished("", "")
                 _uiState.update {
                     it.copy(
                         streamingDraft = "",
-                        progress = it.progress.copy(isRunning = false, stageTitle = "Gestoppt")
+                        progress = it.progress.copy(isRunning = false, stageTitle = tr("stopped"))
                     )
                 }
                 throw e
             } catch (e: Exception) {
-                BackgroundWork.hooks?.finished("Recherche abgebrochen", e.message.orEmpty().take(200))
+                BackgroundWork.hooks?.finished(tr("bg_aborted"), e.message.orEmpty().take(200))
                 _uiState.update {
                     it.copy(
                         streamingDraft = "",
-                        progress = it.progress.copy(isRunning = false, stageTitle = "Abgebrochen"),
-                        errorMessage = "Fehler in der Pipeline: ${e.message}"
+                        progress = it.progress.copy(isRunning = false, stageTitle = tr("aborted")),
+                        errorMessage = tr("err_pipeline", e.message)
                     )
                 }
             }
@@ -381,7 +382,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                     val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
                     if (c.moveToFirst() && i >= 0) c.getString(i) else null
                 }
-            }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Dokument"
+            }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/') ?: tr("document")
             importBytes(name) {
                 withContext(Dispatchers.IO) {
                     val max = com.veritas.localresearch.docs.LocalDocumentStore.MAX_BYTES
@@ -391,7 +392,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                             if (c.moveToFirst() && i >= 0 && !c.isNull(i)) c.getLong(i) else null
                         }
                     }.getOrNull()
-                    if (size != null && size > max) error("Datei ist größer als ${max / 1024 / 1024} MB.")
+                    if (size != null && size > max) error(tr("file_too_big_mb", max / 1024 / 1024))
                     app.contentResolver.openInputStream(uri)?.use { inp ->
                         if (size != null && size > 0) {
                             // Bekannte Groesse: direkt in ein Feld passender Laenge lesen (keine zweite Kopie im Speicher)
@@ -410,23 +411,23 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                                 val n = inp.read(buf)
                                 if (n < 0) break
                                 out.write(buf, 0, n)
-                                if (out.size() > max) error("Datei ist zu groß.")
+                                if (out.size() > max) error(tr("file_too_big"))
                             }
                             out.toByteArray()
                         }
-                    } ?: error("Datei nicht lesbar")
+                    } ?: error(tr("file_unreadable"))
                 }
             }
         }
     }
 
     private suspend fun importBytes(name: String, read: suspend () -> ByteArray): Boolean {
-        _uiState.update { it.copy(importStatus = "Lese $name…", errorMessage = null) }
-        BackgroundWork.hooks?.started("Dokument: ${name.take(60)}")
+        _uiState.update { it.copy(importStatus = tr("reading", name), errorMessage = null) }
+        BackgroundWork.hooks?.started(tr("bg_doc", name.take(60)))
         try {
             val doc = docStore.import(name, read()) { s ->
                 _uiState.update { it.copy(importStatus = s) }
-                BackgroundWork.hooks?.progress("Dokument: ${name.take(60)}", s)
+                BackgroundWork.hooks?.progress(tr("bg_doc", name.take(60)), s)
             }.getOrElse { e ->
                 android.util.Log.w("VeritasImport", "$name", e)
                 _uiState.update { it.copy(errorMessage = "$name: ${e.message}") }
@@ -435,13 +436,13 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
             }
             if (onnxEmbedder.isReady) {
                 val chunks = docStore.chunkTree(doc, TextChunker()).children
-                _uiState.update { it.copy(importStatus = "Bereite ${doc.title} vor (${chunks.size} Abschnitte)…") }
-                BackgroundWork.hooks?.progress("Dokument: ${name.take(60)}", "${chunks.size} Abschnitte werden indexiert")
+                _uiState.update { it.copy(importStatus = tr("preparing", doc.title, chunks.size)) }
+                BackgroundWork.hooks?.progress(tr("bg_doc", name.take(60)), tr("bg_indexing", chunks.size))
                 val vectors = withContext(Dispatchers.Default) {
                     retriever.embedChunks(chunks) { k, n ->
                         if (k % 256 < 16 || k == n) {
-                            _uiState.update { it.copy(importStatus = "Indexiere ${doc.title}: $k von $n Abschnitten…") }
-                            BackgroundWork.hooks?.progress("Dokument: ${name.take(60)}", "Indexiert: $k von $n Abschnitten")
+                            _uiState.update { it.copy(importStatus = tr("indexing", doc.title, k, n)) }
+                            BackgroundWork.hooks?.progress(tr("bg_doc", name.take(60)), tr("bg_indexed", k, n))
                         }
                     }
                 }
@@ -455,7 +456,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
             throw e
         } catch (e: OutOfMemoryError) {
             android.util.Log.w("VeritasImport", name, e)
-            _uiState.update { it.copy(errorMessage = "$name: Zu groß für den Arbeitsspeicher dieses Geräts.") }
+            _uiState.update { it.copy(errorMessage = tr("oom", name)) }
             BackgroundWork.hooks?.finished("", "")
             return false
         } catch (e: Exception) {
@@ -470,11 +471,11 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Kurzfassung und Fragevorschlaege; Fortschritt in der Importzeile und in der Benachrichtigung. */
     private suspend fun buildGuide(doc: com.veritas.localresearch.docs.LocalDoc, name: String) {
-        _uiState.update { it.copy(importStatus = "Erstelle Überblick zu ${doc.title}…") }
+        _uiState.update { it.copy(importStatus = tr("guide_making", doc.title)) }
         val (summary, questions) = withContext(Dispatchers.Default) {
             researchEngine.sourceGuide(doc, docStore) { p ->
-                _uiState.update { it.copy(importStatus = "Überblick zu ${doc.title}: ${p.stageTitle}") }
-                BackgroundWork.hooks?.progress("Dokument: ${name.take(60)}", "Überblick: ${p.stageTitle}")
+                _uiState.update { it.copy(importStatus = tr("guide_progress", doc.title, p.stageTitle)) }
+                BackgroundWork.hooks?.progress(tr("bg_doc", name.take(60)), tr("bg_guide", p.stageTitle))
             }
         }
         docStore.setGuide(doc.id, summary, questions)
@@ -485,17 +486,17 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
         val doc = docStore.docs.value.firstOrNull { it.id == id } ?: return
         if (_uiState.value.importStatus != null || _uiState.value.progress.isRunning) return
         if (!llamaEngine.isLoaded) {
-            _uiState.update { it.copy(showModelManager = true, errorMessage = "Bitte zuerst ein lokales GGUF-Modell laden.") }
+            _uiState.update { it.copy(showModelManager = true, errorMessage = tr("need_model")) }
             return
         }
         importJob = viewModelScope.launch {
-            BackgroundWork.hooks?.started("Dokument: ${doc.title.take(60)}")
+            BackgroundWork.hooks?.started(tr("bg_doc", doc.title.take(60)))
             try {
                 buildGuide(doc, doc.title)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = "Überblick fehlgeschlagen: ${e.message}") }
+                _uiState.update { it.copy(errorMessage = tr("err_guide", e.message)) }
             } finally {
                 BackgroundWork.hooks?.finished("", "")
                 _uiState.update { it.copy(importStatus = null) }
@@ -601,10 +602,10 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             result.onSuccess {
-                android.widget.Toast.makeText(app, "${format.label} gespeichert", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(app, tr("saved", format.label), android.widget.Toast.LENGTH_SHORT).show()
             }.onFailure { e ->
                 android.util.Log.e("VeritasExport", "Export ${format.name}", e)
-                _uiState.update { it.copy(errorMessage = "Export fehlgeschlagen: ${e.message}") }
+                _uiState.update { it.copy(errorMessage = tr("err_export", e.message)) }
             }
         }
     }
@@ -616,7 +617,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
         _uiState.update {
             it.copy(
                 streamingDraft = "",
-                progress = it.progress.copy(isRunning = false, stageTitle = "Gestoppt")
+                progress = it.progress.copy(isRunning = false, stageTitle = tr("stopped"))
             )
         }
     }
