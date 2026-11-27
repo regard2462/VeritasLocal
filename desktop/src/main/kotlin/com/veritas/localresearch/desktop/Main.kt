@@ -62,6 +62,7 @@ private fun nativeDir(): String {
 /**
  * Start ohne Argumente: Fenster. Pruefstart ohne Fenster:
  * --autorun "<Frage>" --model <datei.gguf> [--depth 2] [--len LONG] [--tag name] [--shot bild.png] [--data ordner] [--log datei]
+ *   [--doc datei.pdf] [--sources WEB|DOCS|BOTH]
  */
 fun main(args: Array<String>) {
     val opts = args.toList().windowed(2, 1, partialWindows = false).filter { it[0].startsWith("--") }.associate { it[0] to it[1] }
@@ -70,6 +71,7 @@ fun main(args: Array<String>) {
     opts["--log"]?.let { System.setProperty("veritas.log", it) }
     System.setProperty("veritas.nativeDir", nativeDir())
     val app = Application(dataDir())
+    com.veritas.localresearch.docs.Ocr.engine = com.veritas.localresearch.docs.DesktopOcr()
     val autorunQ = opts["--autorun"]
     if (autorunQ != null) {
         exitProcess(runAutorun(app, autorunQ, opts))
@@ -133,7 +135,7 @@ private fun runAutorun(app: Application, question: String, opts: Map<String, Str
         opts["--len"]?.let { name ->
             AnswerLength.entries.firstOrNull { it.name == name }?.let { len -> vm.updateSettings { it.copy(answerLength = len) } }
         }
-        vm.autorun(question, opts["--model"].orEmpty(), opts["--depth"]?.toIntOrNull() ?: 2, tag)
+        vm.autorun(question, opts["--model"].orEmpty(), opts["--depth"]?.toIntOrNull() ?: 2, tag, opts["--doc"], opts["--sources"])
     }
     val out = File(app.filesDir, "autorun/$tag.json")
     while (!(out.exists() && out.length() > 0)) delay(1000)

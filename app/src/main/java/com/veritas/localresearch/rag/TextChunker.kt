@@ -12,6 +12,10 @@ class TextChunker(
 
     fun resetIds() = idGen.set(1)
 
+    /** Abschnitte mit eigener Groesse (eigene Dokumente: kleine Suchabschnitte und groessere Absaetze). */
+    fun chunkDocument(doc: ScrapedDocument, size: Int, overlap: Int): List<TextChunk> =
+        TextChunker(size, overlap).also { it.idGen.set(idGen.get()) }.chunkDocument(doc).also { idGen.set(it.lastOrNull()?.chunkId?.plus(1) ?: idGen.get()) }
+
     fun chunkDocument(doc: ScrapedDocument): List<TextChunk> {
         val cleaned = doc.cleanText.replace(HSPACE_REGEX, " ").trim()
         if (cleaned.length < 40) return emptyList()

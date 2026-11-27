@@ -192,8 +192,8 @@ class GroundingTest {
                 "Hier finden Sie nützliche Handreichungen und Checklisten für den Datentransfer bei Personalwechsel.\n" +
                 "Mit einem strukturierten Datentransfer sicherst du die Daten deiner Mitarbeitenden und deines Teams.\n" +
                 "Große Unternehmen haben spezifische Anforderungen, die zwar oft in Handbüchern nachzulesen sind. " +
-                "Das entscheidende Wissen befindet sich aber in den Köpfen der Mitarbeitenden.\n" +
-                "Systemisches Lernen in Organisationen. Beispielverlag, S. 17 ff.",
+                "Die entscheidenden Daten liegen aber auf den Rechnern der Mitarbeitenden.\n" +
+                "Datenpflege im Betrieb. Beispielverlag, S. 17 ff.",
             SourceType.WEB
         )
         val all = chunks + (7 to page)
@@ -224,7 +224,7 @@ class GroundingTest {
             "Hier finden Sie nützliche Handreichungen und Checklisten für den Datentransfer bei Personalwechsel", 7)).verifiedClaims.size)
         assertEquals(0, check(RawClaimDto("Strukturierter Datentransfer sichert die Daten der Mitarbeitenden.",
             "Mit einem strukturierten Datentransfer sicherst du die Daten deiner Mitarbeitenden", 7)).verifiedClaims.size)
-        assertEquals(0, check(RawClaimDto("Systemisches Lernen in Organisationen stammt vom Beispielverlag.",
+        assertEquals(0, check(RawClaimDto("Datenpflege im Betrieb stammt vom Beispielverlag.",
             "Beispielverlag, S. 17 ff", 7)).verifiedClaims.size)
         // Abgeschriebener Eingabekopf verschwindet, der Satz danach bleibt
         val leak = v.groundAnswer("CHUNK_ID=12 | QUELLE=example.org | TITEL=Datentransfer: 'Empfehlungen der Fachgruppe e. V. – Juni 2025' [1]. " +
@@ -233,11 +233,11 @@ class GroundingTest {
         assertTrue(leak, leak.contains("Strukturiertes Datenmanagement hilft"))
         // Halber "zwar"-Satz: der Quellsatz mit dem "aber" steht dort
         val both = check(RawClaimDto("Große Unternehmen haben spezifische Anforderungen, die zwar oft in Handbüchern nachzulesen sind.",
-            "Große Unternehmen haben spezifische Anforderungen, die zwar oft in Handbüchern nachzulesen sind. Das entscheidende Wissen befindet sich aber in den Köpfen der Mitarbeitenden", 7))
+            "Große Unternehmen haben spezifische Anforderungen, die zwar oft in Handbüchern nachzulesen sind. Die entscheidenden Daten liegen aber auf den Rechnern der Mitarbeitenden", 7))
         assertEquals(1, both.verifiedClaims.size)
         val g = v.groundAnswer("Große Unternehmen haben spezifische Anforderungen, die zwar oft in Handbüchern nachzulesen sind [1].",
             both.verifiedClaims, "Datenmanagement")
-        assertTrue(g, g.contains("aber in den Köpfen"))
+        assertTrue(g, g.contains("aber auf den Rechnern"))
         // Anhang: Satz ohne Bezug oder halber Satz kommt nicht hinein
         val es = both.verifiedClaims[0].copy(exactQuote = "Es stärkt den Austausch zwischen Mitarbeitenden.")
         assertEquals(null, v.appendixSentence(es, verbatim = true))

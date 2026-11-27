@@ -2,7 +2,17 @@
 
 <a href="https://buymeacoffee.com/regard2462"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="40"></a>
 
-Deep research on your own device, for Android, Windows and Linux. A small local language model (Qwen3 0.6B, 1.7B or 4B, GGUF) runs through `llama.cpp`, searches the web without a backend and answers only from sources it can quote.
+Deep research on your own device, for Android, Windows and Linux. A small local language model (Qwen3, Qwen3.5, Nemotron 3 Nano or LFM3, GGUF) runs through `llama.cpp`, searches the web or your own documents without a backend and answers only from sources it can quote.
+
+<p>
+<img src="docs/screenshots/android-documents.png" alt="Own documents with overview and suggested questions (Android)" width="250">
+<img src="docs/screenshots/android-running.png" alt="Question about a PDF while it runs (Android)" width="250">
+<img src="docs/screenshots/android-answer.png" alt="Answer with checked quotes from the PDF (Android)" width="250">
+</p>
+<p>
+<img src="docs/screenshots/desktop-web.png" alt="Web research on Windows" width="49%">
+<img src="docs/screenshots/desktop-documents.png" alt="Document question on the graphics card (Windows)" width="49%">
+</p>
 
 ## Pipeline
 
@@ -13,6 +23,26 @@ Deep research on your own device, for Android, Windows and Linux. A small local 
 5. **Deterministic checks in Kotlin:** every quote is matched against its chunk (or any other loaded chunk, since small models mix up chunk ids). The claim itself must use the words of its source, so translated or reinterpreted claims and terms smuggled in from the question are rejected. If the model delivers too few facts, the best matching source sentences are added verbatim, scored by the reranker. In the written answer every sentence must rest on a cited fact, otherwise it is removed; copied or invented quotes are removed too, and so are garbled paraphrases (a source word with a stray ending or a one-letter typo, two new compounds built from source words, or the same four words twice in one sentence) and copied sentence tails that start in the middle of a source sentence. A sentence that strays too far from the wording of its cited source is replaced by the source sentence itself (strict for models up to about 2B parameters, looser from 3B on), and so is a sentence that opens a section with "Sie", "Es" or "This" and has nothing to refer to. Short lines without punctuation count as headings. For German questions a fact only counts if its page names the main topic of the question, so a page that only shares a side word ("rechtliche Hürden") is dropped. Line breaks inside PDF sentences are joined (a line counts as wrapped if it nearly fills the column or ends on an article or conjunction), headings, imprint lines, literature references, service offers and lines that address the reader ("Ihr Betrieb") are no facts, a quote that spans a heading or list keeps only the line the claim rests on, a quote that opens with "Es" or "Sie" carries the sentence before it (and the claim may only name what that sentence names), a half sentence with "zwar" but no "aber" is replaced by the full source sentence, chunks are only split at sentence ends or real line ends, and sentence fragments or sentences cut off at the end of a chunk are rejected. Claims are checked for a second domain, and every number, date and amount in the answer must appear in the cited chunks. Unsupported numbers are highlighted in yellow. Tapping `[1]` opens the original passage with the quote marked. The answer can be selected and copied, or copied with its source list.
 6. **Answer length:** Short, Medium or Detailed. Detailed works like the outline step of STORM: the model names subtopics of the question, the section headings of matching Wikipedia articles add more, and a second search round covers them. More pages and facts are used, and the answer is structured like a paper (concept, one section per subtopic, influencing factors and obstacles, open questions). The rules of step 5 still apply to every sentence.
 7. **Export:** PDF, DOCX and ODT with title page, table of contents, sections and reference list. Citation styles: APA 7, Harvard, Chicago author-date, IEEE and DIN ISO 690 (numeric). Authors, dates and site names come from the meta tags of the pages (Highwire `citation_*`, Dublin Core, Open Graph, schema.org JSON-LD, the alt text of the site logo), from the document info of PDFs and from the Wikipedia and arXiv APIs. If a page or PDF names no site, the home page of its domain is read once for the name; missing years are written as "o. J." or "n.d.". In DOCX the table of contents is a real TOC field with linked entries (Word offers to update the page numbers when the file is opened), in ODT a LibreOffice index, in the PDF it has page numbers and jump links plus bookmarks. Citations link to their reference entry, web addresses are clickable.
+
+## Your own documents
+
+Under "Sources" you choose Web, Documents or Both. Documents are added from the device and stay in the app folder:
+
+- Formats: PDF, DOCX, ODT, EPUB, HTML, TXT, Markdown and images (JPG, PNG, WebP, BMP), up to 300 MB or 20 million characters each. PDFs have no page limit, so whole textbooks with 1000 pages and more fit.
+- Scanned pages and images are read with Tesseract 5 (Tesseract4Android on Android, Tess4J on the desktop). Only PDF pages without a text layer go through OCR, up to 2000 pages per file. The German and English language data (`tessdata_fast`, about 6 MB) is downloaded on first use. On Linux Tess4J needs the system library (package `tesseract-ocr`).
+- Each document can be ticked or unticked for the next question.
+- On import the text is split into paragraphs of about 900 characters and each paragraph into small search chunks of about 280 characters. Search runs on the small chunks; the model gets the whole paragraph around each hit (parent-child retrieval as in Dify). The vectors of the search chunks are stored next to the text and reused as long as the embedding model and the chunks stay the same.
+- After the import a short overview is written the same way as an answer to "Worum geht es in dem Dokument?", so every sentence rests on a checked quote. Four suggested questions come with it; tapping one puts it into the question field. If no language model was loaded during the import, the overview can be created later.
+- Every chunk knows its chapter and section. For PDFs they come from the bookmarks (table of contents), otherwise from the headings in the text. Chapter and section go into the vector, the keyword index and the line the model sees above each chunk, so a question about "Preispolitik" also finds paragraphs under that heading that never repeat the word.
+- In large documents the question is first turned into search terms the way a textbook would name them (technical terms, synonyms, sub-terms) instead of web style aspects. The keyword index reduces words to a simple stem ("ökonomischen" finds "ökonomische"). For every search term the 60 best chunks go to the cross-encoder, and at the end every chosen chunk is scored once more against the original question. Chunks far behind the best one are dropped, so a stray search term cannot pull in another chapter.
+- "Documents" answers only from the ticked files, with the same quote checks as for web pages. There is no limit of chunks per file.
+- Questions that ask for an overview ("Worum geht es?", "Fasse zusammen", "What is this about?") take chunks spread evenly from the start to the end of every document instead of the most similar ones. If the question names a chapter ("Fasse Kapitel 3 zusammen") or a topic that is a heading, only that part of the document is used. If it names a topic of a large document that is not a heading, the normal search picks the passages.
+- Importing a large book takes a while, because every chunk gets a vector once (about 6500 chunks for a textbook of 470 pages, under a minute on a desktop). The progress shows in the app and in the notification; later questions reuse the stored vectors.
+- For PDFs every chunk knows its pages. The passage view shows "S. 4" or "S. 4–5", and the reference list names the file instead of a web address.
+
+## Background
+
+On Android a research run, a document import (text recognition, overview) continues when the app goes to the background or is closed. A foreground service (type `dataSync`) shows the current stage with a stop button and keeps the CPU awake. When the answer is ready, a notification opens it. Android 15 limits `dataSync` services to 6 hours a day, after which the run stops.
 
 ## Build
 
@@ -39,7 +69,20 @@ gradle :desktop:createDistributable   # program folder, plus :desktop:packageMsi
 
 On Windows use MSVC with the shared runtime (the default); the runtime DLLs come with the bundled Java runtime. Data and models are stored in `%LOCALAPPDATA%\VeritasLocal` or `~/.local/share/VeritasLocal`.
 
-On first start the model manager downloads the models. Devices with 8 GB RAM or more should use Qwen3 4B, others Qwen3 1.7B. Qwen3 0.6B also works but writes clumsier text. A custom GGUF file (for example Gemma) can be imported.
+On the desktop `llama.cpp` is also built with Vulkan (`-DGGML_VULKAN=ON`, needs the Vulkan SDK on Windows or `libvulkan-dev` and `glslc` on Linux). If a graphics card with a Vulkan driver is found, the model runs on it; if it does not fit into the video memory, the app falls back to the CPU. The settings show the card and can switch it off. On a desktop with an RTX 4060 Ti a document question with Qwen3 1.7B took 58 seconds instead of 97 on the CPU. Android stays on the CPU.
+
+### Models
+
+On first start the model manager downloads the models. All of them are Q4_K_M files from Hugging Face:
+
+- Qwen3 0.6B, 1.7B and 4B (Apache-2.0): 1.7B for devices with less than 8 GB RAM, 4B from 8 GB. 0.6B works but writes clumsier text.
+- Qwen3.5 2B and 4B (Apache-2.0): the newer generation, more fluent sentences at the same size.
+- NVIDIA Nemotron 3 Nano 4B (NVIDIA Open Model License).
+- Liquid LFM3 1.7B (LFM Open License, free for companies below 10 million USD revenue): the fastest of the list.
+
+For the search, `multilingual-e5-small` is the default embedding. `multilingual-e5-base` (about 280 MB) can be chosen instead: it finds the right passage more often in large books, but indexing takes about three times as long.
+
+The chat format comes from the template stored in the GGUF file. Models with a thinking mode get an empty thinking block, so they answer directly. A custom GGUF file can be imported as well.
 
 ## Status
 
@@ -49,4 +92,4 @@ The search depth sets the budget: more search queries per sub-topic, more pages,
 
 ## License
 
-AGPL-3.0-or-later. `llama.cpp` (MIT) is fetched separately.
+AGPL-3.0-or-later. `llama.cpp` (MIT) is fetched separately. Tesseract, Tesseract4Android, Tess4J and the `tessdata_fast` language data are under Apache-2.0.

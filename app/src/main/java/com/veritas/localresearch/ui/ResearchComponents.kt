@@ -66,8 +66,9 @@ fun PipelineProgressCard(progress: PipelineProgress) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                AssistChip(onClick = {}, label = { Text("${progress.scrapedDomains.size} Domains") })
-                AssistChip(onClick = {}, label = { Text("${progress.chunkCount} Chunks") })
+                val n = progress.scrapedDomains.size
+                AssistChip(onClick = {}, label = { Text(if (n == 1) "1 Quelle" else "$n Quellen") })
+                AssistChip(onClick = {}, label = { Text("${progress.chunkCount} Abschnitte") })
                 if (progress.verifiedClaimsCount > 0 || progress.rejectedClaimsCount > 0) {
                     AssistChip(
                         onClick = {},
@@ -291,6 +292,7 @@ fun ClickToPassageSheet(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 AssistChip(onClick = {}, label = { Text(claim.chunk.domain) })
+                pageLabel(claim.chunk)?.let { p -> AssistChip(onClick = {}, label = { Text(p) }) }
                 AssistChip(
                     onClick = {},
                     label = {
@@ -322,7 +324,7 @@ fun ClickToPassageSheet(
                 )
             }
 
-            Button(
+            if (claim.chunk.sourceType != com.veritas.localresearch.domain.SourceType.LOCAL) Button(
                 onClick = {
                     runCatching {
                         uriHandler.openUri(claim.chunk.url)
@@ -344,7 +346,18 @@ private fun plainCopy(report: ResearchReport): String = buildString {
     append(report.synthesizedAnswer)
     if (report.verifiedClaims.isNotEmpty()) {
         append("\n\nQuellen:\n")
-        report.verifiedClaims.distinctBy { it.citationIndex }.forEach { vc -> append("[${vc.citationIndex}] ${vc.chunk.title}, ${vc.chunk.url}\n") }
+        report.verifiedClaims.distinctBy { it.citationIndex }.forEach { vc ->
+            val where = if (vc.chunk.sourceType == com.veritas.localresearch.domain.SourceType.LOCAL)
+                listOfNotNull(vc.chunk.domain, pageLabel(vc.chunk)).joinToString(", ") else vc.chunk.url
+            append("[${vc.citationIndex}] ${vc.chunk.title}, $where\n")
+        }
     }
 }.trim()
+
+/** "S. 4" bzw. "S. 4–5" fuer Abschnitte eigener PDF-Dokumente, sonst null. */
+fun pageLabel(c: com.veritas.localresearch.domain.TextChunk): String? = when {
+    c.page <= 0 -> null
+    c.pageEnd > c.page -> "S. ${c.page}–${c.pageEnd}"
+    else -> "S. ${c.page}"
+}
 

@@ -30,7 +30,9 @@ data class BibEntry(
     val url: String,
     val accessed: LocalDate,
     val isPdf: Boolean,
-    val isWiki: Boolean
+    val isWiki: Boolean,
+    /** Eigenes Dokument des Nutzers; [site] ist dann der Dateiname. */
+    val isLocal: Boolean = false
 ) {
     val year: String get() = date.take(4)
     val anchor: String get() = "src$number"
@@ -84,7 +86,8 @@ object Citations {
                 url = c.url,
                 accessed = accessed,
                 isPdf = m.isPdf,
-                isWiki = isWiki
+                isWiki = isWiki,
+                isLocal = c.sourceType == SourceType.LOCAL
             )
         }
     }
@@ -141,6 +144,20 @@ object Citations {
         // Seitenname nennen, ausser er steht schon als Organisation an Autorstelle
         val siteDiffers = names.isNotEmpty() || !e.site.equals(e.corporateAuthor, ignoreCase = true)
         val title = e.title.trimEnd('.')
+
+        // Eigenes Dokument: keine Adresse und kein Abrufdatum, dafuer der Dateiname
+        if (e.isLocal) {
+            if (style.numeric) t("[${e.number}] ")
+            val author = names.joinToString(if (style == CitationStyle.DIN_ISO_690) "; " else ", ") {
+                if (style == CitationStyle.DIN_ISO_690) "${it.first.uppercase()}, ${it.second}".trimEnd(',', ' ')
+                else "${it.first}, ${initials(it.second)}".trimEnd(',', ' ')
+            }
+            if (author.isNotEmpty()) t("${author.trimEnd('.')} (${e.year.ifBlank { lang.noDate }}). ")
+            else if (e.year.isNotEmpty()) t("(${e.year}). ")
+            i("$title.")
+            t(" ${if (lang.german) "Datei" else "File"}: ${e.site}.")
+            return out
+        }
 
         when (style) {
             CitationStyle.APA7 -> {

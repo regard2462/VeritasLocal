@@ -6,7 +6,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.veritas.localresearch.ui.ResearchScreen
 import com.veritas.localresearch.ui.ResearchViewModel
 import com.veritas.localresearch.ui.VeritasTheme
@@ -15,9 +14,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        askNotificationsOnce()
+        val vm: ResearchViewModel = (application as VeritasApp).researchViewModel
         setContent {
             VeritasTheme {
-                val vm: ResearchViewModel = viewModel()
                 ResearchScreen(viewModel = vm)
                 // Nur in Debug-Fassungen: automatischer Testlauf per Intent (Frage, Modelldatei, Tiefe)
                 val debuggable = (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
@@ -32,11 +32,22 @@ class MainActivity : ComponentActivity() {
                             question = q,
                             modelFileName = intent.getStringExtra("autorun_model").orEmpty(),
                             depth = intent.getIntExtra("autorun_depth", 2),
-                            tag = intent.getStringExtra("autorun_tag") ?: "run"
+                            tag = intent.getStringExtra("autorun_tag") ?: "run",
+                            docPath = intent.getStringExtra("autorun_doc"),
+                            sources = intent.getStringExtra("autorun_sources")
                         )
                     }
                 }
             }
         }
+    }
+
+    /** Benachrichtigungen (Fortschritt im Hintergrund, Ergebnis) einmalig erfragen; ohne sie laeuft die Recherche trotzdem. */
+    private fun askNotificationsOnce() {
+        if (android.os.Build.VERSION.SDK_INT < 33 || ResearchService.canNotify(this)) return
+        val prefs = getSharedPreferences("settings", MODE_PRIVATE)
+        if (prefs.getBoolean("asked_notifications", false)) return
+        prefs.edit().putBoolean("asked_notifications", true).apply()
+        requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 7)
     }
 }

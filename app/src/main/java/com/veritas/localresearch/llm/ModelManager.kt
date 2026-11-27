@@ -64,6 +64,38 @@ class ModelManager(private val context: Context) {
             minRamGb = 8
         ),
         ModelPreset(
+            id = "qwen3.5-2b",
+            displayName = "Qwen3.5 2B (Q4_K_M) • Neuer, ab 6 GB RAM • Apache-2.0",
+            fileName = "Qwen3.5-2B-Q4_K_M.gguf",
+            downloadUrl = "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf",
+            approxSizeMb = 1280,
+            minRamGb = 6
+        ),
+        ModelPreset(
+            id = "qwen3.5-4b",
+            displayName = "Qwen3.5 4B (Q4_K_M) • Flüssigste Antworten, ab 8 GB RAM • Apache-2.0",
+            fileName = "Qwen3.5-4B-Q4_K_M.gguf",
+            downloadUrl = "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf",
+            approxSizeMb = 2741,
+            minRamGb = 8
+        ),
+        ModelPreset(
+            id = "nemotron3-nano-4b",
+            displayName = "NVIDIA Nemotron 3 Nano 4B (Q4_K_M) • ab 8 GB RAM • NVIDIA Open Model License",
+            fileName = "NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf",
+            downloadUrl = "https://huggingface.co/nvidia/NVIDIA-Nemotron-3-Nano-4B-GGUF/resolve/main/NVIDIA-Nemotron3-Nano-4B-Q4_K_M.gguf",
+            approxSizeMb = 2837,
+            minRamGb = 8
+        ),
+        ModelPreset(
+            id = "lfm3-1.7b",
+            displayName = "Liquid LFM3 1.7B (Q4_K_M) • Sehr schnell, ab 4 GB RAM • LFM Open License (bis 10 Mio. USD Umsatz)",
+            fileName = "LFM3-1.7B-Q4_K_M.gguf",
+            downloadUrl = "https://huggingface.co/LiquidAI/LFM3-1.7B-GGUF/resolve/main/LFM3-1.7B-Q4_K_M.gguf",
+            approxSizeMb = 1100,
+            minRamGb = 4
+        ),
+        ModelPreset(
             id = "e5-small-onnx",
             displayName = "multilingual-e5-small (ONNX Quantized) • Mehrsprachige Embeddings, empfohlen",
             fileName = "multilingual_e5_small_qint8.onnx",
@@ -73,6 +105,17 @@ class ModelManager(private val context: Context) {
             isEmbedding = true,
             extraVocabUrl = "https://huggingface.co/Xenova/multilingual-e5-small/resolve/main/tokenizer.json",
             vocabFileName = "e5_tokenizer.json"
+        ),
+        ModelPreset(
+            id = "e5-base-onnx",
+            displayName = "multilingual-e5-base (ONNX Quantized) • Genauer bei großen Büchern, Import etwa 3× langsamer",
+            fileName = "multilingual_e5_base_qint8.onnx",
+            downloadUrl = "https://huggingface.co/Xenova/multilingual-e5-base/resolve/main/onnx/model_quantized.onnx",
+            approxSizeMb = 280,
+            minRamGb = 6,
+            isEmbedding = true,
+            extraVocabUrl = "https://huggingface.co/Xenova/multilingual-e5-base/resolve/main/tokenizer.json",
+            vocabFileName = "e5_base_tokenizer.json"
         ),
         ModelPreset(
             id = "mmarco-reranker-onnx",

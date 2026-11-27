@@ -1,5 +1,7 @@
 package com.veritas.localresearch.pipeline
 
+import com.veritas.localresearch.docs.LocalDoc
+import com.veritas.localresearch.docs.LocalDocumentStore
 import com.veritas.localresearch.domain.ClaimExtractionDto
 import com.veritas.localresearch.domain.GapCheckDto
 import com.veritas.localresearch.domain.GbnfGrammars
@@ -68,6 +70,7 @@ class DeepResearchEngine(
         stage.startsWith("Stufe 1") -> "Frage zerlegen"
         stage.startsWith("Stufe 2: Quellen suchen") -> "Suche"
         stage.startsWith("Stufe 2") -> "Seiten laden"
+        stage.startsWith("Stufe 3: Dokumente") -> "Dokumente indexieren"
         stage.startsWith("Stufe 3: Hybrid-RAG") -> "Indexieren"
         stage.startsWith("Stufe 3: Reranking") -> "Reranking"
         stage.startsWith("Stufe 3") -> "Auswahl"
@@ -85,14 +88,33 @@ class DeepResearchEngine(
         else -> DepthProfile(5, 9, 5, 21, 3, 7, 7, 1150)
     }
 
+    /** Nur eigene Dokumente (kein Web) im aktuellen Lauf. */
+    @Volatile private var docsOnly = false
+
+    /** Uebersichtsfrage zu eigenen Dokumenten ("Worum geht es?", "Fasse zusammen"). */
+    @Volatile private var overview = false
+
+    /** Frage und eigene Dokumente in verschiedenen Sprachen: Suchbegriffe der Frage stehen nicht im Text. */
+    @Volatile private var crossLang = false
+
+    /**
+     * [docs]: eigene Dokumente, die mit durchsucht werden; [useWeb] = false beantwortet die Frage nur aus ihnen.
+     */
     suspend fun runResearch(
         question: String,
         maxRounds: Int = 2,
         onProgress: (PipelineProgress) -> Unit,
-        onStreamToken: (String) -> Unit
+        onStreamToken: (String) -> Unit,
+        docs: List<LocalDoc> = emptyList(),
+        docStore: LocalDocumentStore? = null,
+        useWeb: Boolean = true,
+        /** Laenge fuer diesen Lauf statt der Einstellung (Ueberblick beim Import). */
+        lengthOverride: AnswerLength? = null
     ): ResearchReport {
         chunker.resetIds()
         retriever.clear()
+        docsOnly = !useWeb && docs.isNotEmpty() && docStore != null
+        overview = docsOnly && isOverviewQuestion(question)
 
         val visitedUrls = LinkedHashSet<String>()
         val scrapedDomains = LinkedHashSet<String>()
@@ -136,7 +158,7 @@ class DeepResearchEngine(
             )
         }
 
-        val cfg = settings.current
+        val cfg = settings.current.let { c -> if (lengthOverride != null) c.copy(answerLength = lengthOverride) else c }
         val detailed = cfg.answerLength == AnswerLength.LONG
         // Ausfuehrlich: mehr Suchanfragen, Seiten und Abschnitte, damit auch Unterthemen Quellen bekommen
         val profile = profileFor(maxRounds).let { p ->
@@ -148,12 +170,45 @@ class DeepResearchEngine(
         // Suche, Quellen und Antwort bleiben in der Sprache der Frage
         val qLang = LanguageDetector.detect(question)
         answerLanguage = qLang?.name ?: "der Sprache der Frage"
+        // Nur eigene Dokumente in anderer Sprache: Aussagen muessen den Wortlaut der Quelle nutzen, also antwortet
+        // die App in der Sprache der Dokumente
+        crossLang = false
+        if (docsOnly && docStore != null) {
+            val sample = docs.joinToString(" ") { docStore.text(it.id).take(3000) }
+            val docLang = LanguageDetector.detect(sample)
+            if (docLang != null && docLang != qLang) { answerLanguage = docLang.name; crossLang = true }
+        }
         length = cfg.answerLength
         val synthesisTokens = (profile.synthesisTokens * length.tokenFactor).toInt()
+        // Eigene Dokumente duerfen mehr Abschnitte stellen als eine Webseite; ohne Web gibt es keine Grenze je Datei
+        val localCap = if (docsOnly) profile.finalChunks * 2 else profile.maxPerDomain + 2
+        fun capOf(c: TextChunk) = if (c.sourceType == SourceType.LOCAL) localCap else profile.maxPerDomain
+
+        // === Eigene Dokumente: Abschnitte mit Seitenangaben, Vektoren aus dem Speicher oder neu berechnet ===
+        val parentOf = HashMap<Int, TextChunk>()
+        if (docs.isNotEmpty() && docStore != null) {
+            for ((i, d) in docs.withIndex()) {
+                emit(1, "Stufe 3: Dokumente indexieren (${i + 1}/${docs.size})", d.title)
+                val tree = docStore.chunkTree(d, chunker)
+                parentOf.putAll(tree.parentOf)
+                val chunks = tree.children
+                val tag = retriever.embedderTag
+                val vectors = docStore.loadVectors(d.id, tag, chunks)
+                    ?: retriever.embedChunks(chunks) { k, n ->
+                        if (k % 512 < 16 || k == n) emit(1, "Stufe 3: Dokumente indexieren (${i + 1}/${docs.size})", "${d.title}: $k von $n Abschnitten")
+                    }.also { docStore.saveVectors(d.id, tag, chunks, it) }
+                retriever.indexChunks(chunks, vectors)
+                scrapedDomains.add(d.fileName)
+                totalScrapedDocs++
+            }
+        }
 
         // === STUFE 1: Query-Zerlegung via GBNF, parallel dazu schon die Suche mit der Originalfrage ===
-        emit(1, "Stufe 1: Frage zerlegen", "Erstelle Suchanfragen zu allen Teilaspekten, Websuche läuft bereits…")
-        val (plan, earlyResults) = coroutineScope {
+        emit(1, "Stufe 1: Frage zerlegen",
+            if (docsOnly) "Erstelle Suchanfragen zu allen Teilaspekten…" else "Erstelle Suchanfragen zu allen Teilaspekten, Websuche läuft bereits…")
+        val (plan, earlyResults) = if (docsOnly) {
+            (if (overview) QueryPlanDto(queries = listOf(question), englishQuery = question) else planQueries(question, profile.queries, detailed, forDocs = true)) to emptyList()
+        } else coroutineScope {
             val early = async { runCatching { webScraper.searchWeb(question, maxResults = 5, lang = qLang) }.getOrDefault(emptyList()) }
             val p = planQueries(question, profile.queries, detailed)
             p to early.await()
@@ -166,20 +221,30 @@ class DeepResearchEngine(
             .ifEmpty { listOf(question) }
         val englishQuery = plan.englishQuery.trim().ifBlank { currentQueries.first() }
         val aspectQueries = LinkedHashSet(currentQueries)
+        // Eigene Dokumente: ein gedachter Lehrbuchabsatz als zusaetzliche Suchanfrage (HyDE). Er findet Stellen, die die
+        // Antwort mit anderen Worten als die Frage geben; er dient nur der Suche und wird nie als Fakt verwendet.
+        val hydeQuery = if (parentOf.isNotEmpty() && !overview) runCatching { hypotheticalPassage(question) }.getOrNull() else null
 
         // Ranking je Teilaspekt und abwechselnd zusammenfuehren, damit nicht ein Aspekt alle Plaetze belegt
         suspend fun rankAcrossAspects(): List<RankedChunk> {
-            val queries = listOf(question) + aspectQueries.take(if (detailed) 9 else 5)
+            // Kleine Suchabschnitte eigener Dokumente: doppelt so viele, mehrere davon fallen auf denselben Absatz
+            val pickLimit = if (parentOf.isEmpty()) profile.finalChunks else profile.finalChunks * 2
+            val queries = listOf(question) + listOfNotNull(hydeQuery) + aspectQueries.take(if (detailed) 9 else 5)
+            // Eigene Dokumente mit Reranker: breiter Kandidatenkreis je Teilfrage, der Cross-Encoder waehlt daraus
+            val rerank = reranker?.isReady == true && cfg.useReranker
+            val poolK = if (rerank && parentOf.isNotEmpty()) maxOf(pickLimit, 60) else pickLimit
             var lists = queries.map { q ->
-                retriever.retrieveTopChunks(q, topK = profile.finalChunks, maxPerDomain = profile.maxPerDomain)
+                retriever.retrieveTopChunks(q, topK = poolK, maxPerDomain = profile.maxPerDomain,
+                    capFor = { c -> if (poolK > pickLimit && c.sourceType == SourceType.LOCAL) poolK else capOf(c) })
             }
             // Cross-Encoder sortiert jede Liste neu: Frage und Abschnitt werden gemeinsam bewertet
-            if (reranker?.isReady == true && cfg.useReranker) {
+            if (rerank) {
                 emit(executedRounds.coerceAtLeast(1), "Stufe 3: Reranking", "Bewerte ${lists.sumOf { it.size }} Kandidaten mit dem Cross-Encoder…")
                 lists = queries.zip(lists).map { (q, list) ->
                     if (list.size < 2) return@map list
-                    val scores = reranker.score(q, list.map { "${it.chunk.title}. ${it.chunk.rawText}" }) ?: return@map list
-                    list.indices.sortedByDescending { scores[it] }.map { list[it] }
+                    val scores = reranker.score(q, list.map { "${it.chunk.titleWithSection}. ${it.chunk.rawText}" }) ?: return@map list
+                    val order = list.indices.sortedByDescending { scores[it] }
+                    order.map { list[it] }
                 }
             }
             val picked = LinkedHashMap<Int, RankedChunk>()
@@ -187,13 +252,25 @@ class DeepResearchEngine(
             val maxLen = lists.maxOfOrNull { it.size } ?: 0
             loop@ for (i in 0 until maxLen) {
                 for (list in lists) {
-                    if (picked.size >= profile.finalChunks) break@loop
+                    if (picked.size >= pickLimit) break@loop
                     val rc = list.getOrNull(i) ?: continue
                     if (rc.chunk.chunkId in picked) continue
                     val d = rc.chunk.domain
-                    if ((perDomain[d] ?: 0) >= profile.maxPerDomain) continue
+                    if ((perDomain[d] ?: 0) >= capOf(rc.chunk)) continue
                     perDomain[d] = (perDomain[d] ?: 0) + 1
                     picked[rc.chunk.chunkId] = rc
+                }
+            }
+            // Eigene Dokumente ohne Themenfilter: Abschnitte, die zur eigentlichen Frage weit hinter dem besten liegen,
+            // kommen ueber eine abwegige Teilfrage herein und fallen weg (mindestens 4 bleiben)
+            if (rerank && parentOf.isNotEmpty() && picked.size > 4) {
+                val list = picked.values.toList()
+                val s = reranker!!.score(question, list.map { "${it.chunk.titleWithSection}. ${it.chunk.rawText}" })
+                if (s != null) {
+                    val best = s.maxOrNull() ?: 0f
+                    val order = list.indices.sortedByDescending { s[it] }
+                    // Nach Bewertung zur Frage sortiert: nur die vorderen Absaetze gehen an das Modell
+                    return order.filterIndexed { rank, i -> rank < 4 || s[i] >= best - RELEVANCE_MARGIN }.map { list[it] }
                 }
             }
             return picked.values.toList()
@@ -202,7 +279,8 @@ class DeepResearchEngine(
         // === ITERATIVE RESEARCH-SCHLEIFE (max. 1-3 Runden) ===
         val subtopicQueries = LinkedHashSet<String>()
         if (detailed) plan.queries.drop(profile.queries).forEach { subtopicQueries.add(it.trim()) }
-        for (round in 1..searchRounds) {
+        if (docsOnly) executedRounds = 1
+        for (round in 1..(if (docsOnly) 0 else searchRounds)) {
             executedRounds = round
 
             // === STUFE 2: Parallele Suche (APIs + Websuche gleichzeitig) ===
@@ -337,10 +415,20 @@ class DeepResearchEngine(
         }
 
         // === Finale Kontext-Diaet: Top 8 Chunks (max. 2 pro Domain, Cross-Source-gewichtet) ===
-        val topRanked = cachedFinalRanking ?: run {
+        // Ueberblick: Abschnitte gleichmaessig ueber jedes Dokument verteilt statt nach Aehnlichkeit zur Frage
+        val overviewPick = if (overview) overviewChunks(profile.finalChunks * 2, question) else null
+        val topRankedSmall = if (overviewPick != null) {
+            emit(executedRounds, "Stufe 3: Auswahl", "Wähle Abschnitte aus allen Teilen der Dokumente…")
+            overviewPick
+        } else cachedFinalRanking ?: run {
             emit(executedRounds, "Stufe 3: Hybrid-Retrieval", "Wähle die ${profile.finalChunks} stärksten Abschnitte (Cross-Source-gewichtet)…")
             rankAcrossAspects()
         }
+        // Eigene Dokumente: statt des kleinen Suchabschnitts geht der ganze Absatz an das Modell (je Absatz einmal)
+        val topRanked = if (parentOf.isEmpty()) topRankedSmall else topRankedSmall
+            .map { rc -> parentOf[rc.chunk.chunkId]?.let { rc.copy(chunk = it) } ?: rc }
+            .distinctBy { it.chunk.chunkId }
+            .take(maxOf(4, profile.finalChunks * 2 / 3))
 
         if (topRanked.isEmpty()) {
             onProgress(
@@ -356,7 +444,8 @@ class DeepResearchEngine(
             )
             return finish(ResearchReport(
                 question = question,
-                synthesizedAnswer = "Dazu wurden keine belegten Informationen in den abgerufenen Quellen gefunden.",
+                synthesizedAnswer = if (docsOnly) "In den ausgewählten Dokumenten wurde dazu nichts gefunden."
+                    else "Dazu wurden keine belegten Informationen in den abgerufenen Quellen gefunden.",
                 verifiedClaims = emptyList(),
                 rejectedClaimCount = 0,
                 unverifiedNumbers = emptyList(),
@@ -369,7 +458,9 @@ class DeepResearchEngine(
 
         // === STUFE 4a: Quote-First Fakten-Extraktion (striktes GBNF-JSON, Temp 0.0) ===
         emit(executedRounds, "Stufe 4: Fakten-Extraktion", "Extrahiere wörtliche Zitate (GBNF-Grammar)…")
-        val passes = topRanked.map { it.chunk }.chunked(profile.chunksPerPass)
+        // Absaetze sind fast doppelt so lang wie Webabschnitte: weniger je Durchgang, damit der Prompt in n_ctx passt
+        val perPass = if (parentOf.isEmpty()) profile.chunksPerPass else maxOf(3, profile.chunksPerPass * 5 / 9)
+        val passes = topRanked.map { it.chunk }.chunked(perPass)
         val rawClaims = passes.flatMapIndexed { i, group ->
             if (passes.size > 1) emit(executedRounds, "Stufe 4: Fakten-Extraktion (${i + 1}/${passes.size})", "Extrahiere wörtliche Zitate aus ${group.size} Abschnitten…")
             extractClaimsWithQuotes(question, group, (profile.claimsPerPass + length.extraFacts / 2).coerceAtLeast(3)).claims
@@ -389,7 +480,8 @@ class DeepResearchEngine(
         // (vom Reranker gegen die Frage bewertet). Woertliche Saetze koennen nichts erfinden.
         // Hauptthema der Frage: Fakten zaehlen nur aus Quellen, die es behandeln (bei "Solarstrom und Solarspeicher …" muss
         // die Seite Solarstrom oder Solarspeicher nennen; ein Kapitel ueber "rechtliche Hürden" im Allgemeinen nicht)
-        val family = if (answerLanguage == LanguageDetector.GERMAN.name) TopicHeuristics.topicFamily(question) else emptyList()
+        // Eigene Dokumente hat der Nutzer selbst gewaehlt: dort entfaellt der Themencheck
+        val family = if (!docsOnly && answerLanguage == LanguageDetector.GERMAN.name) TopicHeuristics.topicFamily(question) else emptyList()
         val allChunks = retriever.getAllChunks()
         val docWords = if (family.isEmpty()) emptyMap() else allChunks.groupBy { it.url }
             .mapValues { (_, cs) -> cs.joinToString(" ") { "${it.title} ${it.rawText}" }.lowercase() }
@@ -427,7 +519,8 @@ class DeepResearchEngine(
             }
         }
         // Themenfremdes raus: ein Fakt muss mindestens einen Suchbegriff der Frage enthalten und zum Hauptthema gehoeren
-        val wordOk = combined.verifiedClaims.filter { questionWordHits(question, "${it.claim} ${it.exactQuote}") >= 1 }
+        val wordOk = if (docsOnly) combined.verifiedClaims
+            else combined.verifiedClaims.filter { questionWordHits(question, "${it.claim} ${it.exactQuote}") >= 1 }
         val topicOk = wordOk.filter(::aboutTopic)
         (wordOk - topicOk.toSet()).forEach { Log.i("VeritasReject", "Quelle ohne Hauptthema $family: ${it.chunk.url}") }
         // Sicherung: bleibt durch den Themencheck fast nichts, war das Hauptthema falsch erkannt
@@ -439,7 +532,8 @@ class DeepResearchEngine(
         )
 
         if (verification.verifiedClaims.isEmpty()) {
-            val fallbackMsg = "Dazu wurden keine durch wörtliche Quellzitate belegten Informationen gefunden."
+            val fallbackMsg = if (docsOnly) "In den ausgewählten Dokumenten stehen dazu keine durch wörtliche Zitate belegten Aussagen."
+                else "Dazu wurden keine durch wörtliche Quellzitate belegten Informationen gefunden."
             onStreamToken(fallbackMsg)
             onProgress(
                 PipelineProgress(
@@ -568,8 +662,13 @@ class DeepResearchEngine(
         ))
     }
 
-    private suspend fun planQueries(question: String, maxQueries: Int, detailed: Boolean = false): QueryPlanDto {
-        val sys = "Du bist ein präziser Such-Planer. Zerlege die Nutzerfrage in ihre Teilaspekte und formuliere für jeden Teilaspekt eine eigene kurze Web-Suchanfrage (queries, 2 bis $maxQueries Stück, keine Wiederholungen, Fachbegriffe verwenden). Bei Fragen nach Stand, Einflüssen, Ursachen oder Vergleichen deckt jede Anfrage einen anderen Aspekt ab (z. B. aktueller Stand, Einflussfaktoren, Studien, Praxisbeispiele, Probleme). Formuliere alle queries auf $answerLanguage, in der Sprache der Frage, nicht übersetzt. Dazu 1 kurze englische Suchanfrage (en_query) für Wikipedia EN / arXiv. Antworte ausschließlich als JSON." +
+    private suspend fun planQueries(question: String, maxQueries: Int, detailed: Boolean = false, forDocs: Boolean = false): QueryPlanDto {
+        val sys = if (forDocs) "Du bist ein präziser Such-Planer für Fachtexte. Die Antwort wird in einem Dokument (z. B. Lehrbuch, Skript, Bericht) " +
+            "gesucht. Formuliere 2 bis $maxQueries kurze Suchanfragen (queries), mit denen sich die passende Textstelle findet: die Fachbegriffe " +
+            "der Frage, ihre gängigen Synonyme und die Unterbegriffe, mit denen ein Lehrbuch das Thema erklärt (z. B. zu Photosynthese: " +
+            "Lichtreaktion, Calvin-Zyklus, Chlorophyll). Keine Anfragen zu aktuellem Stand, Studien oder Praxisbeispielen, wenn die Frage nicht " +
+            "danach fragt. Formuliere auf $answerLanguage, dazu 1 kurze englische Suchanfrage (en_query). Antworte ausschließlich als JSON."
+        else "Du bist ein präziser Such-Planer. Zerlege die Nutzerfrage in ihre Teilaspekte und formuliere für jeden Teilaspekt eine eigene kurze Web-Suchanfrage (queries, 2 bis $maxQueries Stück, keine Wiederholungen, Fachbegriffe verwenden). Bei Fragen nach Stand, Einflüssen, Ursachen oder Vergleichen deckt jede Anfrage einen anderen Aspekt ab (z. B. aktueller Stand, Einflussfaktoren, Studien, Praxisbeispiele, Probleme). Formuliere alle queries auf $answerLanguage, in der Sprache der Frage, nicht übersetzt. Dazu 1 kurze englische Suchanfrage (en_query) für Wikipedia EN / arXiv. Antworte ausschließlich als JSON." +
             (if (detailed) " Die Antwort soll ausführlich wie eine wissenschaftliche Arbeit werden: Hänge an die queries zusätzlich bis zu 4 Anfragen zu Unterthemen und Teilgebieten an, die zum Thema gehören, auch wenn die Frage sie nicht nennt (z. B. zu Solarenergie: Photovoltaik, Stromspeicher, Netzeinspeisung, Förderung)." else "")
         val usr = "Nutzerfrage: $question\nEntscheide außerdem, ob Wikipedia (Fakten/Überblick) und arXiv (Wissenschaft/Forschung) sinnvoll sind."
         val out = llama.generate(
@@ -581,6 +680,15 @@ class DeepResearchEngine(
         )
         return runCatching { json.decodeFromString<QueryPlanDto>(out) }
             .getOrDefault(QueryPlanDto(queries = listOf(question), englishQuery = question, useWikipedia = true, useArxiv = false))
+    }
+
+    /** Zwei bis drei Saetze, wie ein Lehrbuch die Frage beantworten wuerde (nur fuer die Suche). */
+    private suspend fun hypotheticalPassage(question: String): String? {
+        val sys = "Schreibe auf $answerLanguage zwei bis drei sachliche Sätze, wie ein Lehrbuch oder Handbuch die Frage beantworten " +
+            "würde, mit den Fachbegriffen, Paragraphen und Zahlen, die dort typischerweise stehen. Keine Einleitung, keine Rückfrage."
+        val out = llama.generate(systemPrompt = sys, userPrompt = question, temperature = 0.05f, maxTokens = 110)
+            .replace(Regex("\\s+"), " ").trim()
+        return out.takeIf { it.length >= 40 }?.take(600)
     }
 
     private suspend fun checkInformationGaps(question: String, snippets: List<String>): GapCheckDto {
@@ -609,12 +717,12 @@ class DeepResearchEngine(
             1. Extrahiere NUR Aussagen, die direkt zur Beantwortung der Frage beitragen.
             2. Jede Aussage MUSS eine kurze, wörtliche, unveränderte Belegstelle (exact_quote, ca. 8–20 Wörter) exakt aus dem zugehörigen chunk_id enthalten.
             3. Erfinde KEINE Zahlen, Daten oder Fakten. Wenn ein Chunk nichts Relevantes enthält, ignoriere ihn.
-            3a. Die Aussage (claim) gibt nur wieder, was im Zitat steht. Füge keine Begriffe aus der Frage hinzu, die im Chunk nicht vorkommen (z. B. ein Land oder eine Organisation, von der der Chunk nicht spricht).
+            3a. Schreibe die Aussage (claim) in der Sprache des Chunks, nicht übersetzt. Sie gibt nur wieder, was im Zitat steht. Füge keine Begriffe aus der Frage hinzu, die im Chunk nicht vorkommen (z. B. ein Land oder eine Organisation, von der der Chunk nicht spricht).
             4. Gib maximal $maxClaims präzise Claims als kompaktes JSON zurück, möglichst aus verschiedenen Chunks und zu verschiedenen Teilaspekten der Frage.
-        """.trimIndent()
+        """.trimIndent() + (if (overview) "\n5. Die Frage verlangt einen Überblick: Extrahiere die zentralen Aussagen der Texte (Thema, Kernthesen, Ergebnisse, Begriffe), keine Nebensächlichkeiten." else "")
 
         val chunksBlock = chunks.joinToString("\n\n") { c ->
-            "CHUNK_ID=${c.chunkId} | QUELLE=${c.domain} | TITEL=${c.title}\n${c.rawText}"
+            "CHUNK_ID=${c.chunkId} | QUELLE=${c.domain} | TITEL=${c.titleWithSection}\n${c.rawText}"
         }
         val usr = "Frage: $question\n\nQuellen-Chunks:\n$chunksBlock"
 
@@ -674,7 +782,7 @@ class DeepResearchEngine(
         if (want <= 0) return emptyList()
         // Nur Saetze mit genug Suchbegriffen der Frage
         val qWords = questionWords(question)
-        val need = if (qWords.size >= 3) 2 else 1
+        val need = if (overview || crossLang) 0 else if (qWords.size >= 3) 2 else 1
         val candidates = chunks.flatMap { c ->
             val joined = com.veritas.localresearch.verification.joinSoftBreaks(c.rawText)
             val pieces = joined.split(SENTENCE_END).map { it.trim() }
@@ -703,7 +811,7 @@ class DeepResearchEngine(
         return candidates.indices.sortedByDescending { scores[it] }
             .filter { i ->
                 val d = candidates[i].first.domain
-                val ok = (perDomain[d] ?: 0) < (if (length == AnswerLength.LONG) 3 else 2)
+                val ok = docsOnly || (perDomain[d] ?: 0) < (if (length == AnswerLength.LONG) 3 else 2)
                 if (ok) perDomain[d] = (perDomain[d] ?: 0) + 1
                 ok
             }
@@ -712,6 +820,68 @@ class DeepResearchEngine(
                 val (c, s) = candidates[i]
                 com.veritas.localresearch.domain.RawClaimDto(claim = s, exactQuote = s, chunkId = c.chunkId)
             }
+    }
+
+    @kotlinx.serialization.Serializable
+    private data class QuestionsDto(val questions: List<String> = emptyList())
+
+    /**
+     * Ueberblick beim Import: eine kurze, zitatgepruefte Zusammenfassung (derselbe Weg wie jede Ueberblicksfrage,
+     * ohne Quellennummern) und Fragevorschlaege. Die Fragen sind keine Aussagen ueber das Dokument und brauchen
+     * daher keine Pruefung.
+     */
+    suspend fun sourceGuide(doc: LocalDoc, docStore: LocalDocumentStore, onProgress: (PipelineProgress) -> Unit): Pair<String, List<String>> {
+        val text = docStore.text(doc.id)
+        val lang = LanguageDetector.detect(text.take(4000))
+        val german = lang == null || lang == LanguageDetector.GERMAN
+        val q = if (german) "Worum geht es in dem Dokument?" else "What is this document about?"
+        val report = runResearch(q, maxRounds = 1, onProgress = onProgress, onStreamToken = {}, docs = listOf(doc),
+            docStore = docStore, useWeb = false, lengthOverride = AnswerLength.SHORT)
+        val summary = if (report.verifiedClaims.isEmpty()) "" else report.synthesizedAnswer
+            .replace(Regex("\\s*\\[\\d+]"), "").lines().joinToString(" ") { it.trim() }.replace(Regex("\\s{2,}"), " ").trim()
+        onProgress(PipelineProgress(stageTitle = "Fragevorschläge", detail = doc.title, isRunning = true))
+        val sample = overviewChunks(6).orEmpty().joinToString("\n\n") { it.chunk.rawText }.take(3500)
+        val language = lang?.name ?: "Deutsch"
+        val sys = "Du schlägst Fragen zu einem Dokument vor. Formuliere 4 kurze, konkrete Fragen auf $language, die sich mit dem Text " +
+            "beantworten lassen, zu verschiedenen Teilen des Dokuments. Keine Ja-Nein-Fragen. Antworte ausschließlich als JSON."
+        val out = llama.generate(sys, "Titel: ${doc.title}\n\nAuszüge:\n$sample", GbnfGrammars.QUESTIONS, temperature = 0.2f, maxTokens = 200)
+        val questions = runCatching { json.decodeFromString<QuestionsDto>(out).questions }.getOrDefault(emptyList())
+            .map { it.trim() }.filter { it.length in 8..160 && it.endsWith("?") }.distinct().take(4)
+        return summary to questions
+    }
+
+    /** Je Dokument gleich viele Abschnitte, gleichmaessig vom Anfang bis zum Ende verteilt. */
+    /**
+     * Ueberblick: Abschnitte gleichmaessig ueber jedes Dokument. Nennt die Frage ein Kapitel ("Kapitel 3") oder ein
+     * Thema aus den Ueberschriften, nur aus diesen Kapiteln. Nennt sie ein Thema, das keine Ueberschrift traegt, und
+     * ist das Dokument gross, null: dann sucht die normale Auswahl die passenden Stellen.
+     */
+    private fun overviewChunks(total: Int, question: String = ""): List<RankedChunk>? {
+        var byDoc = retriever.getAllChunks().groupBy { it.url }.values.toList()
+        if (byDoc.isEmpty()) return emptyList()
+        if (question.isNotBlank()) {
+            val num = CHAPTER_REF.find(question)?.groupValues?.get(1)
+            val topic = questionWords(question).filter { w -> !OVERVIEW.containsMatchIn(w) && w !in OVERVIEW_FILLER }
+            fun inScope(c: TextChunk): Boolean {
+                val s = c.section.lowercase()
+                if (s.isEmpty()) return false
+                if (num != null) return s.split(" › ").any { part ->
+                    part.startsWith("$num ") || part.startsWith("$num.") || Regex("^(?:kapitel|teil|chapter|part|lektion|unit)\\s+$num\\b").containsMatchIn(part)
+                }
+                val words = s.split(NON_WORD).filter { it.length > 4 }
+                return topic.any { q -> words.any { w -> sameWord(q, w) } }
+            }
+            if (num != null || topic.isNotEmpty()) {
+                val scoped = byDoc.map { cs -> cs.filter(::inScope) }.filter { it.isNotEmpty() }
+                if (scoped.isNotEmpty()) byDoc = scoped
+                else if (topic.isNotEmpty() && byDoc.sumOf { it.size } > 400) return null
+            }
+        }
+        val per = ((total + byDoc.size - 1) / byDoc.size).coerceAtLeast(2)
+        return byDoc.flatMap { cs ->
+            if (cs.size <= per) cs
+            else (0 until per).map { k -> cs[(k.toLong() * (cs.size - 1) / (per - 1)).toInt()] }.distinctBy { it.chunkId }
+        }.map { RankedChunk(it, null, 0f, 0, 0f) }
     }
 
     private fun questionWords(question: String): Set<String> =
@@ -769,7 +939,7 @@ class DeepResearchEngine(
         val factsBlock = verifiedClaims.joinToString("\n") { "[${it.citationIndex}] ${it.claim}" }
         val detailed = length == AnswerLength.LONG
         val maxSections = if (detailed) 7 else 5
-        val sys = "Du gliederst eine Antwort. Bilde 2 bis $maxSections Abschnitte mit kurzen, sachlichen Überschriften, " +
+        val sys = "Du gliederst eine Antwort. Bilde 2 bis $maxSections Abschnitte mit kurzen, sachlichen Überschriften auf $answerLanguage, " +
             "die zusammen alle Teilaspekte der Frage abdecken. Ordne jeden Fakt über seine Nummer genau einem passenden Abschnitt zu. " +
             (if (detailed) "Gliedere wie eine wissenschaftliche Arbeit: zuerst Begriff und Einordnung, dann je ein Abschnitt pro Unterthema " +
                 "(z. B. einzelne Verfahren oder Anwendungsbereiche), dann Einflussfaktoren und Hindernisse, zuletzt offene Fragen. " else "") +
@@ -814,15 +984,47 @@ class DeepResearchEngine(
                 - ${length.sentences} Sätze, sachlich und ohne Füllsätze.
             """.trimIndent()
             val secUsr = "Frage: $question\nAlle Abschnitte: $titles\nDieser Abschnitt: ${sec.first}\n\nGEPRÜFTE FAKTEN:\n$secFacts\n\nSchreibe jetzt den Abschnitt:"
-            val text = llama.generate(secSys, secUsr, null, temperature = 0.1f, maxTokens = perSection, onToken = onStreamToken).trim()
-            answer.append(text).append("\n\n")
+            val raw = llama.generate(secSys, secUsr, null, temperature = 0.1f, maxTokens = perSection, onToken = onStreamToken).trim()
+            answer.append(cutSectionText(raw)).append("\n\n")
             onStreamToken("\n\n")
         }
         return answer.toString().trim()
     }
 
-    private companion object {
-        val WIKI_HEADING = Regex("(?m)^\\s*={2,4}\\s*(.+?)\\s*={2,4}\\s*$")
+    companion object {
+        /**
+         * Abschnittstext ohne eigene Ueberschrift; beginnt das Modell darin schon den naechsten Abschnitt ("… nicht.## Kosten"),
+         * endet der Text davor.
+         */
+        internal fun cutSectionText(raw: String): String {
+            val t = raw.lines().dropWhile { it.isBlank() || it.trimStart().startsWith("#") }.joinToString("\n").trim()
+            val k = INLINE_HEADING.find(t)?.range?.first ?: return t
+            return t.substring(0, k).trim()
+        }
+
+        private val INLINE_HEADING = Regex("#{1,6}\\s")
+
+        private val OVERVIEW = Regex("(?i)zusammenfass|fasse\\b.*\\bzusammen|überblick|ueberblick|worum geht|wovon handel|" +
+            "hauptaussage|kernaussage|kernthese|inhaltsangabe|summar|overview|main points|key points|key takeaways|what is (?:it|this|that|the)(?: \\w+)? about")
+
+        /** Fragt nach Inhalt oder Zusammenfassung der Dokumente insgesamt statt nach einem bestimmten Punkt. */
+        fun isOverviewQuestion(question: String): Boolean = OVERVIEW.containsMatchIn(question)
+
+        /** Abstand der Reranker-Bewertung zum besten Abschnitt, ab dem ein Abschnitt eigener Dokumente wegfaellt. */
+        private const val RELEVANCE_MARGIN = 1.8f
+
+        /** "Kapitel 3", "Chapter 12", "Abschnitt 4" in der Frage. */
+        private val CHAPTER_REF = Regex("(?i)\\b(?:kapitel|teil|abschnitt|chapter|part|section|lektion|unit)\\s+(\\d{1,3})\\b")
+
+        /** Woerter von Ueberblicksfragen, die kein Thema nennen. */
+        private val OVERVIEW_FILLER = setOf(
+            "dokument", "dokuments", "dokumente", "dokumenten", "buches", "texts", "textes", "kapitel", "kapitels", "abschnitt",
+            "abschnitts", "inhalt", "inhalte", "inhalts", "zusammen", "wichtigsten", "wesentlichen", "kurz", "kurze", "bitte",
+            "document", "chapter", "section", "about", "content", "contents", "briefly", "please", "paper", "artikel", "article",
+            "datei", "lehrbuch", "skript", "studie", "bericht", "worum", "wovon", "handelt", "dreht", "insgesamt"
+        )
+
+        private val WIKI_HEADING = Regex("(?m)^\\s*={2,4}\\s*(.+?)\\s*={2,4}\\s*$")
         val GENERIC_HEADINGS = setOf("literatur", "weblinks", "einzelnachweise", "siehe auch", "anmerkungen", "quellen",
             "references", "external links", "see also", "further reading", "notes", "bibliography", "weiterführende literatur")
         val SENTENCE_END = Regex("(?<=\\p{L}{2}[.!?])\\s+(?=\\p{Lu})|\\n+")

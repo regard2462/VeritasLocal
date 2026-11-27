@@ -41,6 +41,8 @@ data class ResearchUiState(
     val queryInput: String = "",
     val maxRounds: Int = 2,
     val loadedLlmName: String? = null,
+    /** Grafikkarte, auf der das Modell rechnet; leer = Prozessor. */
+    val gpuInUse: String = "",
     val isEmbeddingLoaded: Boolean = false,
     val loadedEmbeddingId: String? = null,
     val rerankerLoaded: Boolean = false,
@@ -55,13 +57,16 @@ data class ResearchUiState(
     val selectedWarningNumber: UnverifiedNumberSpan? = null,
     val showModelManager: Boolean = false,
     val showSettings: Boolean = false,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    /** Laufender Import eines eigenen Dokuments: Text fuer die Anzeige, sonst null. */
+    val importStatus: String? = null
 )
 
 class ResearchViewModel(app: Application) : AndroidViewModel(app) {
 
     val modelManager = ModelManager(app)
     val settingsStore = SettingsStore(app)
+    val docStore = com.veritas.localresearch.docs.LocalDocumentStore(app)
     private val sharedHttpClient = OkHttpClient.Builder()
         .connectTimeout(6, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
@@ -91,6 +96,8 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
     val uiState: StateFlow<ResearchUiState> = _uiState.asStateFlow()
 
     private var activeResearchJob: Job? = null
+    /** Laufender Import oder Ueberblick, damit Stopp (auch aus der Benachrichtigung) ihn abbrechen kann. */
+    private var importJob: Job? = null
 
     init {
         autoLoadAvailableModels()
@@ -134,6 +141,16 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateSettings(transform: (com.veritas.localresearch.settings.AppSettings) -> com.veritas.localresearch.settings.AppSettings) =
         settingsStore.update(transform)
+
+    /** Verfuegbare Grafikkarte (Vulkan), leer auf Android oder ohne passende Karte. */
+    val gpuName: String by lazy { llamaEngine.gpuName() }
+
+    /** Grafikkarte an oder aus; das geladene Modell wird dafuer neu geladen. */
+    fun setUseGpu(on: Boolean) {
+        settingsStore.update { it.copy(useGpu = on) }
+        val name = llamaEngine.loadedModelName ?: return
+        loadLlmFile(java.io.File(modelManager.modelsDir, name))
+    }
 
     fun engineCooldownUntil(engine: SearchEngine): Long = webScraper.engineCooldownUntil(engine)
     fun clearEngineCooldown(engine: SearchEngine) = webScraper.clearEngineCooldown(engine)
@@ -238,11 +255,13 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                     progress = it.progress.copy(isRunning = false)
                 )
             }
+            llamaEngine.useGpu = settingsStore.current.useGpu
             val ok = llamaEngine.loadModel(file, nCtx = 4096)
             _uiState.update {
                 it.copy(
                     isModelLoading = false,
                     loadedLlmName = llamaEngine.loadedModelName,
+                    gpuInUse = llamaEngine.gpuInUse,
                     errorMessage = if (!ok) "GGUF-Modell konnte nicht geladen werden (RAM prüfen)." else null
                 )
             }
@@ -251,7 +270,13 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
 
     fun startResearch() {
         val question = _uiState.value.queryInput.trim()
-        if (question.isBlank()) return
+        if (question.isBlank() || _uiState.value.importStatus != null) return
+        val mode = settingsStore.current.sourceMode
+        val docs = if (mode == com.veritas.localresearch.settings.SourceMode.WEB) emptyList() else docStore.docs.value.filter { it.selected }
+        if (mode == com.veritas.localresearch.settings.SourceMode.DOCS && docs.isEmpty()) {
+            _uiState.update { it.copy(errorMessage = "Bitte zuerst ein Dokument hinzufügen und auswählen.") }
+            return
+        }
         if (!llamaEngine.isLoaded) {
             _uiState.update {
                 it.copy(showModelManager = true, errorMessage = "Bitte zuerst ein lokales GGUF-Modell laden.")
@@ -283,13 +308,23 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
             val streamLock = Any()
             val streamBuffer = StringBuilder()
             var lastUiPushMs = 0L
+            var lastNotifyMs = 0L
+            val shortQ = question.take(60)
+            BackgroundWork.hooks?.started("Recherche: $shortQ")
 
             try {
                 // Jsoup, Chunking, BM25 und Verifikation laufen abseits des UI-Threads
                 val report = withContext(Dispatchers.Default) { researchEngine.runResearch(
                     question = question,
                     maxRounds = _uiState.value.maxRounds,
-                    onProgress = { p -> _uiState.update { it.copy(progress = p) } },
+                    onProgress = { p ->
+                        _uiState.update { it.copy(progress = p) }
+                        val now = System.currentTimeMillis()
+                        if (p.isRunning && now - lastNotifyMs >= 1500L) {
+                            lastNotifyMs = now
+                            BackgroundWork.hooks?.progress("Recherche: $shortQ", p.stageTitle)
+                        }
+                    },
                     onStreamToken = { tok ->
                         val now = System.currentTimeMillis()
                         val snapshot: String? = synchronized(streamLock) {
@@ -304,10 +339,15 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                         if (snapshot != null) {
                             _uiState.update { it.copy(streamingDraft = snapshot) }
                         }
-                    }
+                    },
+                    docs = docs,
+                    docStore = docStore,
+                    useWeb = mode != com.veritas.localresearch.settings.SourceMode.DOCS
                 ) }
                 _uiState.update { it.copy(report = report, streamingDraft = "") }
+                BackgroundWork.hooks?.finished("Antwort fertig", shortQ)
             } catch (e: CancellationException) {
+                BackgroundWork.hooks?.finished("", "")
                 _uiState.update {
                     it.copy(
                         streamingDraft = "",
@@ -316,6 +356,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 throw e
             } catch (e: Exception) {
+                BackgroundWork.hooks?.finished("Recherche abgebrochen", e.message.orEmpty().take(200))
                 _uiState.update {
                     it.copy(
                         streamingDraft = "",
@@ -327,8 +368,146 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Eigenes Dokument laden: Text lesen, Abschnitte bilden und Vektoren vorab berechnen, damit die erste Frage
+     * nicht warten muss. Laeuft wie eine Recherche im Vordergrunddienst weiter, wenn die App geschlossen wird.
+     */
+    fun importDocument(uri: Uri) {
+        if (_uiState.value.importStatus != null || _uiState.value.progress.isRunning) return
+        val app = getApplication<Application>()
+        importJob = viewModelScope.launch {
+            val name = runCatching {
+                app.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                    val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (c.moveToFirst() && i >= 0) c.getString(i) else null
+                }
+            }.getOrNull() ?: uri.lastPathSegment?.substringAfterLast('/') ?: "Dokument"
+            importBytes(name) {
+                withContext(Dispatchers.IO) {
+                    val max = com.veritas.localresearch.docs.LocalDocumentStore.MAX_BYTES
+                    val size = runCatching {
+                        app.contentResolver.query(uri, null, null, null, null)?.use { c ->
+                            val i = c.getColumnIndex(android.provider.OpenableColumns.SIZE)
+                            if (c.moveToFirst() && i >= 0 && !c.isNull(i)) c.getLong(i) else null
+                        }
+                    }.getOrNull()
+                    if (size != null && size > max) error("Datei ist größer als ${max / 1024 / 1024} MB.")
+                    app.contentResolver.openInputStream(uri)?.use { inp ->
+                        if (size != null && size > 0) {
+                            // Bekannte Groesse: direkt in ein Feld passender Laenge lesen (keine zweite Kopie im Speicher)
+                            val arr = ByteArray(size.toInt())
+                            var off = 0
+                            while (off < arr.size) {
+                                val n = inp.read(arr, off, arr.size - off)
+                                if (n < 0) break
+                                off += n
+                            }
+                            if (off == arr.size) arr else arr.copyOf(off)
+                        } else {
+                            val out = java.io.ByteArrayOutputStream()
+                            val buf = ByteArray(64 * 1024)
+                            while (true) {
+                                val n = inp.read(buf)
+                                if (n < 0) break
+                                out.write(buf, 0, n)
+                                if (out.size() > max) error("Datei ist zu groß.")
+                            }
+                            out.toByteArray()
+                        }
+                    } ?: error("Datei nicht lesbar")
+                }
+            }
+        }
+    }
+
+    private suspend fun importBytes(name: String, read: suspend () -> ByteArray): Boolean {
+        _uiState.update { it.copy(importStatus = "Lese $name…", errorMessage = null) }
+        BackgroundWork.hooks?.started("Dokument: ${name.take(60)}")
+        try {
+            val doc = docStore.import(name, read()) { s ->
+                _uiState.update { it.copy(importStatus = s) }
+                BackgroundWork.hooks?.progress("Dokument: ${name.take(60)}", s)
+            }.getOrElse { e ->
+                android.util.Log.w("VeritasImport", "$name", e)
+                _uiState.update { it.copy(errorMessage = "$name: ${e.message}") }
+                BackgroundWork.hooks?.finished("", "")
+                return false
+            }
+            if (onnxEmbedder.isReady) {
+                val chunks = docStore.chunkTree(doc, TextChunker()).children
+                _uiState.update { it.copy(importStatus = "Bereite ${doc.title} vor (${chunks.size} Abschnitte)…") }
+                BackgroundWork.hooks?.progress("Dokument: ${name.take(60)}", "${chunks.size} Abschnitte werden indexiert")
+                val vectors = withContext(Dispatchers.Default) {
+                    retriever.embedChunks(chunks) { k, n ->
+                        if (k % 256 < 16 || k == n) {
+                            _uiState.update { it.copy(importStatus = "Indexiere ${doc.title}: $k von $n Abschnitten…") }
+                            BackgroundWork.hooks?.progress("Dokument: ${name.take(60)}", "Indexiert: $k von $n Abschnitten")
+                        }
+                    }
+                }
+                docStore.saveVectors(doc.id, retriever.embedderTag, chunks, vectors)
+            }
+            if (llamaEngine.isLoaded) buildGuide(doc, name)
+            BackgroundWork.hooks?.finished("", "")
+            return true
+        } catch (e: CancellationException) {
+            BackgroundWork.hooks?.finished("", "")
+            throw e
+        } catch (e: OutOfMemoryError) {
+            android.util.Log.w("VeritasImport", name, e)
+            _uiState.update { it.copy(errorMessage = "$name: Zu groß für den Arbeitsspeicher dieses Geräts.") }
+            BackgroundWork.hooks?.finished("", "")
+            return false
+        } catch (e: Exception) {
+            android.util.Log.w("VeritasImport", name, e)
+            _uiState.update { it.copy(errorMessage = "$name: ${e.message}") }
+            BackgroundWork.hooks?.finished("", "")
+            return false
+        } finally {
+            _uiState.update { it.copy(importStatus = null) }
+        }
+    }
+
+    /** Kurzfassung und Fragevorschlaege; Fortschritt in der Importzeile und in der Benachrichtigung. */
+    private suspend fun buildGuide(doc: com.veritas.localresearch.docs.LocalDoc, name: String) {
+        _uiState.update { it.copy(importStatus = "Erstelle Überblick zu ${doc.title}…") }
+        val (summary, questions) = withContext(Dispatchers.Default) {
+            researchEngine.sourceGuide(doc, docStore) { p ->
+                _uiState.update { it.copy(importStatus = "Überblick zu ${doc.title}: ${p.stageTitle}") }
+                BackgroundWork.hooks?.progress("Dokument: ${name.take(60)}", "Überblick: ${p.stageTitle}")
+            }
+        }
+        docStore.setGuide(doc.id, summary, questions)
+    }
+
+    /** Ueberblick fuer ein Dokument nachtraeglich erstellen (z. B. wenn beim Import kein Modell geladen war). */
+    fun createGuide(id: String) {
+        val doc = docStore.docs.value.firstOrNull { it.id == id } ?: return
+        if (_uiState.value.importStatus != null || _uiState.value.progress.isRunning) return
+        if (!llamaEngine.isLoaded) {
+            _uiState.update { it.copy(showModelManager = true, errorMessage = "Bitte zuerst ein lokales GGUF-Modell laden.") }
+            return
+        }
+        importJob = viewModelScope.launch {
+            BackgroundWork.hooks?.started("Dokument: ${doc.title.take(60)}")
+            try {
+                buildGuide(doc, doc.title)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.update { it.copy(errorMessage = "Überblick fehlgeschlagen: ${e.message}") }
+            } finally {
+                BackgroundWork.hooks?.finished("", "")
+                _uiState.update { it.copy(importStatus = null) }
+            }
+        }
+    }
+
+    fun removeDocument(id: String) = docStore.remove(id)
+    fun selectDocument(id: String, selected: Boolean) = docStore.setSelected(id, selected)
+
     /** Debug-Testlauf: Modell laden, Frage stellen, Bericht als JSON nach files/autorun/<tag>.json schreiben. */
-    fun autorun(question: String, modelFileName: String, depth: Int, tag: String) {
+    fun autorun(question: String, modelFileName: String, depth: Int, tag: String, docPath: String? = null, sources: String? = null) {
         viewModelScope.launch {
             val dir = File(getApplication<Application>().filesDir, "autorun").apply { mkdirs() }
             val out = File(dir, "$tag.json")
@@ -347,10 +526,19 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                 val f = File(modelManager.modelsDir, modelFileName)
                 if (llamaEngine.loadedModelName != f.name) {
                     _uiState.update { it.copy(isModelLoading = true) }
+                    llamaEngine.useGpu = settingsStore.current.useGpu
                     val ok = llamaEngine.loadModel(f, nCtx = 4096)
-                    _uiState.update { it.copy(isModelLoading = false, loadedLlmName = llamaEngine.loadedModelName) }
+                    _uiState.update { it.copy(isModelLoading = false, loadedLlmName = llamaEngine.loadedModelName, gpuInUse = llamaEngine.gpuInUse) }
                     if (!ok) { out.writeText("{\"error\":\"model load failed\"}"); return@launch }
                 }
+            }
+            sources?.let { n -> com.veritas.localresearch.settings.SourceMode.entries.firstOrNull { it.name == n } }
+                ?.let { m -> settingsStore.update { it.copy(sourceMode = m) } }
+            // Testdokument einmalig laden, danach nur dieses auswaehlen
+            if (!docPath.isNullOrBlank()) {
+                val f = File(docPath)
+                if (docStore.docs.value.none { it.fileName == f.name }) importBytes(f.name) { f.readBytes() }
+                docStore.docs.value.forEach { d -> docStore.setSelected(d.id, d.fileName == f.name) }
             }
             _uiState.update { it.copy(queryInput = question, maxRounds = depth.coerceIn(1, 3)) }
             startResearch()
@@ -359,6 +547,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
             val json = kotlinx.serialization.json.buildJsonObject {
                 put("question", kotlinx.serialization.json.JsonPrimitive(question))
                 put("model", kotlinx.serialization.json.JsonPrimitive(llamaEngine.loadedModelName.orEmpty()))
+                put("gpu", kotlinx.serialization.json.JsonPrimitive(llamaEngine.gpuInUse))
                 put("embedding", kotlinx.serialization.json.JsonPrimitive(_uiState.value.loadedEmbeddingId.orEmpty()))
                 put("reranker", kotlinx.serialization.json.JsonPrimitive(_uiState.value.rerankerLoaded))
                 put("depth", kotlinx.serialization.json.JsonPrimitive(depth))
@@ -379,6 +568,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
                             put("url", kotlinx.serialization.json.JsonPrimitive(c.chunk.url))
                             put("trust", kotlinx.serialization.json.JsonPrimitive(c.trustLevel.name))
                             put("title", kotlinx.serialization.json.JsonPrimitive(c.chunk.title))
+                            put("page", kotlinx.serialization.json.JsonPrimitive(c.chunk.page))
                             put("meta", kotlinx.serialization.json.JsonPrimitive(c.chunk.meta.toString()))
                         }
                     }))
@@ -422,6 +612,7 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
     fun stopResearch() {
         llamaEngine.cancelGeneration()
         activeResearchJob?.cancel()
+        importJob?.cancel()
         _uiState.update {
             it.copy(
                 streamingDraft = "",

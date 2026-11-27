@@ -37,6 +37,11 @@ class OnnxEmbedder {
     var sameTopicThreshold: Float = 0.74f
         private set
 
+    /** Kennung des geladenen Modells; gespeicherte Vektoren gelten nur fuer dieselbe Kennung. */
+    @Volatile
+    var modelTag: String = ""
+        private set
+
     val isReady: Boolean get() = !closed.get() && session != null && tokenizer != null
 
     suspend fun load(modelFile: File, vocabFile: File): Boolean = withContext(Dispatchers.IO) {
@@ -48,7 +53,10 @@ class OnnxEmbedder {
             try {
                 val e = OrtEnvironment.getEnvironment()
                 runCatching { e.setTelemetry(false) }
-                val threads = (Runtime.getRuntime().availableProcessors() / 2).coerceIn(2, 4)
+                // Android: hoechstens 4 Kerne (Waerme, Akku); Desktop bis 8, damit grosse Buecher schneller indexiert sind
+                val cores = Runtime.getRuntime().availableProcessors()
+                val android = System.getProperty("java.vendor").orEmpty().contains("Android", ignoreCase = true)
+                val threads = if (android) (cores / 2).coerceIn(2, 4) else (cores - 2).coerceIn(2, 8)
                 val createdSession = OrtSession.SessionOptions().use { opts ->
                     opts.setIntraOpNumThreads(threads)
                     opts.setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
@@ -61,6 +69,7 @@ class OnnxEmbedder {
                 tokenizer = if (multilingual) UnigramTokenizer(vocabFile) else WordPieceTokenizer(vocabFile)
                 usesE5Prefixes = multilingual && modelFile.name.contains("e5", ignoreCase = true)
                 sameTopicThreshold = if (usesE5Prefixes) 0.88f else 0.74f
+                modelTag = "${modelFile.name}:${modelFile.length()}:${vocabFile.length()}"
                 true
             } catch (_: Exception) {
                 closeInternalLocked()
@@ -72,7 +81,12 @@ class OnnxEmbedder {
     suspend fun embed(text: String, isQuery: Boolean = true): FloatArray? =
         embedBatch(listOf(text), batchSize = 1, isQuery = isQuery).firstOrNull()
 
-    suspend fun embedBatch(texts: List<String>, batchSize: Int = 16, isQuery: Boolean = false): List<FloatArray?> = withContext(Dispatchers.Default) {
+    suspend fun embedBatch(
+        texts: List<String>,
+        batchSize: Int = 16,
+        isQuery: Boolean = false,
+        onProgress: ((done: Int, total: Int) -> Unit)? = null
+    ): List<FloatArray?> = withContext(Dispatchers.Default) {
         if (texts.isEmpty() || !isReady) return@withContext List(texts.size) { null }
         val results = arrayOfNulls<FloatArray>(texts.size)
 
@@ -93,6 +107,7 @@ class OnnxEmbedder {
                 results[offset + i] = batchVectors[i]
             }
             offset = end
+            onProgress?.invoke(offset, encodedAll.size)
         }
         results.toList()
     }

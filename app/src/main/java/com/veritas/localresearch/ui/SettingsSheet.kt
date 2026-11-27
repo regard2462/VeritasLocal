@@ -93,6 +93,9 @@ fun SettingsSheet(viewModel: ResearchViewModel, onDismiss: () -> Unit) {
                     )
                 }
             }
+            if (viewModel.gpuName.isNotEmpty()) {
+                SettingSwitch("Grafikkarte nutzen (${viewModel.gpuName})", settings.useGpu) { on -> viewModel.setUseGpu(on) }
+            }
             SettingSwitch("Reranker nutzen (wenn geladen)", settings.useReranker) { on ->
                 viewModel.updateSettings { it.copy(useReranker = on) }
             }

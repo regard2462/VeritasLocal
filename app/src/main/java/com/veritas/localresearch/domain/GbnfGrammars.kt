@@ -28,6 +28,11 @@ intlist ::= "[" ws (int (ws "," ws int)*)? ws "]"
 $PRIMITIVES
 """.trimIndent()
 
+    val QUESTIONS: String = """
+root ::= "{" ws "\"questions\":" ws stringlist ws "}"
+$PRIMITIVES
+""".trimIndent()
+
     val CLAIM_EXTRACTION: String = """
 root ::= "{" ws "\"claims\":" ws "[" ws (claimobj (ws "," ws claimobj)*)? ws "]" ws "}"
 claimobj ::= "{" ws "\"claim\":" ws string "," ws "\"exact_quote\":" ws string "," ws "\"chunk_id\":" ws int ws "}"

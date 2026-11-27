@@ -19,13 +19,17 @@ class HybridRetriever(
         cachedQueryVec = null
     }
 
-    suspend fun indexChunks(newChunks: List<TextChunk>) {
+    /** Vektoren fuer Abschnitte (leer, wenn kein Embedding-Modell geladen ist). */
+    suspend fun embedChunks(chunks: List<TextChunk>, onProgress: ((Int, Int) -> Unit)? = null): List<FloatArray?> =
+        if (embedder.isReady) embedder.embedBatch(chunks.map { "${it.titleWithSection}. ${it.rawText}" }, batchSize = 16, onProgress = onProgress)
+        else List(chunks.size) { null }
+
+    val embedderTag: String get() = if (embedder.isReady) embedder.modelTag else ""
+
+    /** [precomputed]: schon berechnete Vektoren in derselben Reihenfolge (eigene Dokumente). */
+    suspend fun indexChunks(newChunks: List<TextChunk>, precomputed: List<FloatArray?>? = null) {
         if (newChunks.isEmpty()) return
-        val vectors = if (embedder.isReady) {
-            embedder.embedBatch(newChunks.map { "${it.title}. ${it.rawText}" }, batchSize = 16)
-        } else {
-            List(newChunks.size) { null }
-        }
+        val vectors = precomputed?.takeIf { it.size == newChunks.size } ?: embedChunks(newChunks)
         val enriched = newChunks.mapIndexed { idx, chunk ->
             chunk.copy(embedding = vectors.getOrNull(idx))
         }
@@ -42,12 +46,15 @@ class HybridRetriever(
     suspend fun retrieveTopChunks(
         query: String,
         topK: Int = 8,
-        maxPerDomain: Int = 2
+        maxPerDomain: Int = 2,
+        capFor: ((TextChunk) -> Int)? = null
     ): List<RankedChunk> {
+        // Kandidatenkreis waechst mit topK (grosse Dokumente: mehr Kandidaten fuer den Reranker)
+        val pool = maxOf(40, topK + 10)
         if (allChunks.isEmpty()) return emptyList()
 
         // 1. BM25 Ranking via In-Memory Index
-        val bm25Ids = ftsStore.searchBm25(query, limit = 40)
+        val bm25Ids = ftsStore.searchBm25(query, limit = pool)
         val bm25RankMap = bm25Ids.withIndex().associate { (idx, id) -> id to (idx + 1) }
 
         // 2. Semantisches Ranking via ONNX Cosine Similarity im RAM (Query-Vektor gecacht)
@@ -74,7 +81,7 @@ class HybridRetriever(
         val semanticScoreMap = semanticScored.toMap()
 
         // 3. Cross-Source-Korrelation (Tokens einmal vorab berechnen statt O(N^2) Regex)
-        val candidateIds = (bm25Ids + semanticScored.take(35).map { it.first }).distinct()
+        val candidateIds = (bm25Ids + semanticScored.take(pool - 5).map { it.first }).distinct()
         val candidates = candidateIds.mapNotNull { allChunks[it] }
         val keyTokensById = candidates.associate { c -> c.chunkId to extractKeyTokens(c.rawText) }
 
@@ -105,7 +112,7 @@ class HybridRetriever(
         val selected = mutableListOf<RankedChunk>()
         for (item in scored) {
             val count = domainCounts.getOrDefault(item.chunk.domain, 0)
-            if (count < maxPerDomain) {
+            if (count < (capFor?.invoke(item.chunk) ?: maxPerDomain)) {
                 selected.add(item)
                 domainCounts[item.chunk.domain] = count + 1
                 if (selected.size >= topK) break

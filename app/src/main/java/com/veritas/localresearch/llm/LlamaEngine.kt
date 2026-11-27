@@ -74,6 +74,22 @@ class LlamaEngine(private val nativeLibDir: String) {
 
     val isLoaded: Boolean get() = handle != 0L && !closed.get()
 
+    /** Modell kennt einen Denkmodus (Vorlage mit think-Tags): der wird fuer jede Anfrage abgeschaltet. */
+    @Volatile
+    private var thinks = false
+
+    /** Grafikkarte nutzen, wenn ein Vulkan-Geraet da ist (nur Desktop; Android rechnet auf dem Prozessor). */
+    @Volatile
+    var useGpu: Boolean = true
+
+    /** Grafikkarte, auf der das geladene Modell rechnet; leer = Prozessor. */
+    @Volatile
+    var gpuInUse: String = ""
+        private set
+
+    /** Name der verfuegbaren Grafikkarte (Vulkan), leer wenn keine da ist. */
+    fun gpuName(): String { ensureBackend(); return runCatching { nativeGpuName() }.getOrDefault("") }
+
     suspend fun loadModel(file: File, nCtx: Int = 4096): Boolean = withContext(Dispatchers.IO) {
         if (closed.get() || !file.exists()) return@withContext false
         ensureBackend()
@@ -89,7 +105,11 @@ class LlamaEngine(private val nativeLibDir: String) {
             val decodeThreads = (cores / 2).coerceIn(2, 4)
             val batchThreads = (cores - 2).coerceIn(decodeThreads, 6)
 
-            val newHandle = nativeLoadModel(file.absolutePath, nCtx, decodeThreads, batchThreads)
+            // Erst auf der Grafikkarte, bei Fehler (zu wenig Grafikspeicher) auf dem Prozessor
+            val gpu = if (useGpu) runCatching { nativeGpuName() }.getOrDefault("") else ""
+            var newHandle = if (gpu.isNotEmpty()) nativeLoadModel(file.absolutePath, nCtx, decodeThreads, batchThreads, 999) else 0L
+            gpuInUse = if (newHandle != 0L) gpu else ""
+            if (newHandle == 0L) newHandle = nativeLoadModel(file.absolutePath, nCtx, decodeThreads, batchThreads, 0)
             if (newHandle != 0L) {
                 val arch = nativeGetModelArch(newHandle)
                 synchronized(handleLock) { handle = newHandle }
@@ -99,6 +119,7 @@ class LlamaEngine(private val nativeLibDir: String) {
                     arch.startsWith("qwen", ignoreCase = true) || arch.isBlank() -> ModelFamily.QWEN_CHATML
                     else -> ModelFamily.CHATML
                 }
+                thinks = runCatching { nativeGetMeta(newHandle, "tokenizer.chat_template") }.getOrDefault("").contains("<think>")
                 true
             } else {
                 false
@@ -118,7 +139,17 @@ class LlamaEngine(private val nativeLibDir: String) {
                 append("<|im_end|>\n<|im_start|>assistant\n")
                 if (disableThinking) append("<think>\n\n</think>\n")
             }
-            ModelFamily.CHATML -> buildString {
+            // Andere Modelle: Chatformat aus der GGUF-Datei, sonst ChatML
+            ModelFamily.CHATML -> handle.takeIf { it != 0L }?.let { h ->
+                runCatching { nativeApplyTemplate(h, systemPrompt, userPrompt) }.getOrNull()?.takeIf { it.isNotBlank() }
+            }?.let { t ->
+                // Denkmodus aus: leerer Denkblock, wie ihn die Vorlagen bei enable_thinking=false setzen
+                when {
+                    !disableThinking || !thinks -> t
+                    t.trimEnd().endsWith("<think>") -> t.trimEnd() + "\n</think>\n\n"
+                    else -> t + "<think>\n\n</think>\n\n"
+                }
+            } ?: buildString {
                 append("<|im_start|>system\n")
                 append(systemPrompt)
                 append("<|im_end|>\n<|im_start|>user\n")
@@ -185,7 +216,9 @@ class LlamaEngine(private val nativeLibDir: String) {
     }
 
     private external fun nativeInitBackend(libDir: String)
-    private external fun nativeLoadModel(path: String, nCtx: Int, nThreads: Int, nThreadsBatch: Int): Long
+    private external fun nativeLoadModel(path: String, nCtx: Int, nThreads: Int, nThreadsBatch: Int, nGpuLayers: Int): Long
+    private external fun nativeGpuName(): String
+    private external fun nativeGetMeta(handle: Long, key: String): String
     private external fun nativeGetModelArch(handle: Long): String
     private external fun nativeGenerate(
         handle: Long,
@@ -195,6 +228,7 @@ class LlamaEngine(private val nativeLibDir: String) {
         maxTokens: Int,
         callback: TokenCallback?
     ): String
+    private external fun nativeApplyTemplate(handle: Long, systemPrompt: String, userPrompt: String): String
     private external fun nativeCancel(handle: Long)
     private external fun nativeFree(handle: Long)
 }

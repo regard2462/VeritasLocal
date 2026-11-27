@@ -31,6 +31,7 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
                         Text(
                             text = buildString {
                                 append(state.loadedLlmName ?: "Kein LLM geladen")
+                                if (state.gpuInUse.isNotEmpty()) append(" • GPU")
                                 append(" • ")
                                 append(if (state.isEmbeddingLoaded) "Hybrid (BM25+ONNX)" else "BM25-Modus")
                             },
@@ -76,11 +77,37 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
                 }
             }
 
+            // Quellen: Websuche, eigene Dokumente oder beides
+            val sourceMode = viewModel.settingsStore.state.collectAsState().value.sourceMode
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text("Quellen:", style = MaterialTheme.typography.labelMedium)
+                com.veritas.localresearch.settings.SourceMode.entries.forEach { m ->
+                    FilterChip(
+                        selected = sourceMode == m,
+                        onClick = { viewModel.updateSettings { it.copy(sourceMode = m) } },
+                        enabled = !state.progress.isRunning,
+                        label = { Text(m.label, maxLines = 1) }
+                    )
+                }
+            }
+            if (sourceMode != com.veritas.localresearch.settings.SourceMode.WEB) {
+                DocumentsPanel(viewModel, state.importStatus, enabled = !state.progress.isRunning)
+            }
+
             // Eingabefeld & Recherche-Tiefe (1-3 Runden)
             OutlinedTextField(
                 value = state.queryInput,
                 onValueChange = viewModel::onQueryChange,
-                label = { Text("Forschungsfrage stellen (100 % lokal geprüft)…") },
+                label = {
+                    Text(
+                        if (sourceMode == com.veritas.localresearch.settings.SourceMode.DOCS) "Frage zu deinen Dokumenten…"
+                        else "Forschungsfrage stellen (100 % lokal geprüft)…"
+                    )
+                },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 2,
                 maxLines = 4,
@@ -131,11 +158,11 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
                 Button(
                     onClick = viewModel::startResearch,
                     modifier = Modifier.fillMaxWidth(),
-                    enabled = state.queryInput.isNotBlank() && !state.isModelLoading
+                    enabled = state.queryInput.isNotBlank() && !state.isModelLoading && state.importStatus == null
                 ) {
                     Icon(Icons.Default.Search, contentDescription = null)
                     Spacer(Modifier.width(6.dp))
-                    Text("Forschen")
+                    Text(if (sourceMode == com.veritas.localresearch.settings.SourceMode.DOCS) "Fragen" else "Forschen")
                 }
             }
 

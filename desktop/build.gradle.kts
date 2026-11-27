@@ -8,13 +8,16 @@ plugins {
 }
 
 // Muss zu versionName in app/build.gradle.kts passen
-val vlVersion = "1.3.1"
+val vlVersion = "1.4.0"
 
 // Gemeinsamer Code liegt im Android-Modul. Was nur auf Android laeuft, bleibt draussen; die Gegenstuecke liegen in
 // src/main/kotlin (schmale Ersatzklassen fuer android.*, Fenster, Dateidialog).
 val sharedSrc = file("../app/src/main/java")
 val androidOnly = listOf(
     "com/veritas/localresearch/MainActivity.kt",
+    "com/veritas/localresearch/VeritasApp.kt",
+    "com/veritas/localresearch/ResearchService.kt",
+    "com/veritas/localresearch/docs/AndroidOcr.kt",
     "com/veritas/localresearch/scraping/WebViewPageRenderer.kt",
     "com/veritas/localresearch/export/PdfWriter.kt",
     "com/veritas/localresearch/scraping/PdfTextExtractor.kt",
@@ -54,6 +57,13 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jsoup:jsoup:1.19.1")
     implementation("org.apache.pdfbox:pdfbox:2.0.37")
+    // Texterkennung: Tesseract ueber JNA (Windows-Bibliotheken im Paket, Linux nutzt libtesseract des Systems).
+    // PDFBox 3 und die Bildwerkzeuge von Tess4J werden nicht gebraucht und vertragen sich nicht mit PDFBox 2.
+    implementation("net.sourceforge.tess4j:tess4j:5.16.0") {
+        exclude(group = "org.apache.pdfbox")
+        exclude(group = "org.jboss")
+        exclude(group = "org.ghost4j")
+    }
 
     testImplementation("junit:junit:4.13.2")
 }

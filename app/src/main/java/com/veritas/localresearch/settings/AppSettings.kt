@@ -16,6 +16,9 @@ enum class AnswerLength(val label: String, val tokenFactor: Float, val extraFact
     LONG("Ausführlich", 1.8f, 4, "5 bis 9", true)
 }
 
+/** Woraus die Antwort kommt: Websuche, eigene Dokumente oder beides. */
+enum class SourceMode(val label: String) { WEB("Web"), DOCS("Dokumente"), BOTH("Beides") }
+
 data class AppSettings(
     val enabledEngines: Set<String> = SearchEngine.entries.filter { it.enabledByDefault }.map { it.id }.toSet(),
     val searxngUrl: String = "",
@@ -26,7 +29,10 @@ data class AppSettings(
     val showTimings: Boolean = true,
     val useReranker: Boolean = true,
     val answerLength: AnswerLength = AnswerLength.MEDIUM,
-    val citationStyle: com.veritas.localresearch.export.CitationStyle = com.veritas.localresearch.export.CitationStyle.APA7
+    val citationStyle: com.veritas.localresearch.export.CitationStyle = com.veritas.localresearch.export.CitationStyle.APA7,
+    val sourceMode: SourceMode = SourceMode.WEB,
+    /** Desktop: Modell auf der Grafikkarte rechnen lassen (Vulkan), wenn eine da ist. */
+    val useGpu: Boolean = true
 ) {
     fun engines(): List<SearchEngine> = SearchEngine.entries.filter { it.id in enabledEngines }
 }
@@ -52,7 +58,9 @@ class SettingsStore(context: Context) {
             showTimings = prefs.getBoolean("timings", d.showTimings),
             useReranker = prefs.getBoolean("reranker", d.useReranker),
             answerLength = AnswerLength.entries.firstOrNull { it.name == prefs.getString("length", null) } ?: d.answerLength,
-            citationStyle = com.veritas.localresearch.export.CitationStyle.entries.firstOrNull { it.name == prefs.getString("citation", null) } ?: d.citationStyle
+            citationStyle = com.veritas.localresearch.export.CitationStyle.entries.firstOrNull { it.name == prefs.getString("citation", null) } ?: d.citationStyle,
+            sourceMode = SourceMode.entries.firstOrNull { it.name == prefs.getString("sources", null) } ?: d.sourceMode,
+            useGpu = prefs.getBoolean("gpu", d.useGpu)
         )
     }
 
@@ -70,6 +78,8 @@ class SettingsStore(context: Context) {
             .putBoolean("reranker", next.useReranker)
             .putString("length", next.answerLength.name)
             .putString("citation", next.citationStyle.name)
+            .putString("sources", next.sourceMode.name)
+            .putBoolean("gpu", next.useGpu)
             .apply()
     }
 }

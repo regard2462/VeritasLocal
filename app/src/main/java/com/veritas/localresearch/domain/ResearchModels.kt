@@ -3,7 +3,8 @@ package com.veritas.localresearch.domain
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-enum class SourceType { WEB, WIKIPEDIA, ARXIV }
+/** LOCAL: vom Nutzer geladenes Dokument; url ist "local:<id>", domain der Dateiname. */
+enum class SourceType { WEB, WIKIPEDIA, ARXIV, LOCAL }
 
 data class SearchResultItem(
     val title: String,
@@ -41,8 +42,16 @@ data class TextChunk(
     val rawText: String,
     val sourceType: SourceType,
     val embedding: FloatArray? = null,
-    val meta: SourceMeta = SourceMeta()
-)
+    val meta: SourceMeta = SourceMeta(),
+    /** Eigene PDF-Dokumente: erste und letzte Seite des Abschnitts (1-basiert), sonst 0. */
+    val page: Int = 0,
+    val pageEnd: Int = 0,
+    /** Eigene Dokumente: Kapitel und Ueberschrift, unter der der Abschnitt steht ("3 Marketing › 3.2 Preise"). */
+    val section: String = ""
+) {
+    /** Titel samt Kapitel fuer Suche, Reranker und Modell. */
+    val titleWithSection: String get() = if (section.isEmpty()) title else "$title › $section"
+}
 
 data class RankedChunk(
     val chunk: TextChunk,

@@ -885,7 +885,7 @@ class DeterministicVerifier {
     private fun tokenizeWords(s: String): List<String> =
         WORD_REGEX.findAll(s.lowercase()).map { it.value }.toList()
 
-    private companion object {
+    internal companion object {
         val CITATION_BRACKET_REGEX = Regex("\\[\\d+\\]")
         val SINGLE_CITATION_REGEX = Regex("\\[(\\d+)\\]")
         val MULTI_CITATION_REGEX = Regex("\\[(\\d+(?:\\s*[,;]\\s*\\d+)+)\\]")
@@ -907,7 +907,8 @@ class DeterministicVerifier {
         val NON_ALNUM_SPACE_REGEX = Regex("[^\\p{L}\\p{N}\\s]")
         val WHITESPACE_REGEX = Regex("\\s+")
         val WORD_REGEX = Regex("[\\p{L}\\p{N}]+")
-        val ABBREVIATIONS = setOf("bzw", "ca", "vgl", "nr", "usw", "etc", "inkl", "ggf", "evtl", "bspw", "sog", "zb", "dr", "prof", "abs", "art", "bzgl", "ua", "mio", "mrd", "jh", "st")
+        val ABBREVIATIONS = setOf("bzw", "ca", "vgl", "nr", "usw", "etc", "inkl", "ggf", "evtl", "bspw", "sog", "zb", "dr", "prof", "abs", "art", "bzgl", "ua", "mio", "mrd", "jh", "st",
+            "abb", "abschn", "tab", "kap", "bd", "hrsg", "aufl", "anm", "fig", "ff", "ebd", "zit", "jg", "vol", "pp", "ch", "sect", "eq", "resp")
         val SELF_PROMO_REGEX = Regex(
             "\\b(?:unser(?:e[mnrs]?)?|in diesem|dieser)\\s+(?:Artikel|Blog|Beitrag|Blogbeitrag|Ratgeber|Leitfaden|Whitepaper|Newsletter|Team|Angebot|Produkt|Software|Tool|Webinar|E-Book|Kunden)\\b|" +
                 "\\b(?:our|this)\\s+(?:article|blog|post|guide|team|product|software|tool|webinar|newsletter)\\b",
@@ -923,7 +924,7 @@ class DeterministicVerifier {
         val PROMPT_LEAK_REGEX = Regex("(?i)\\b(?:CHUNK_ID|QUELLE|TITEL|SOURCE|TITLE)\\s*=")
         val PROMPT_LEAK_SEGMENT_REGEX = Regex("(?i)\\bCHUNK_ID\\s*=[^\\n]*?(?:\\[\\d+]\\.?|$)", RegexOption.MULTILINE)
         /** Literaturangabe statt Aussage ("Beispielverlag, S. 17 ff.") */
-        val LITERATURE_REGEX = Regex("\\bS\\.\\s?\\d+(?:\\s?ff?\\.?|\\s?[-–]\\s?\\d+)?\\s*\\.?\\s*$|\\bISBN\\b|\\((?:Hrsg|Hg)\\.\\)|\\bHrsg\\.\\s|(?:^|\\s)In:\\s")
+        val LITERATURE_REGEX = Regex("\\bS\\.\\s?\\d+(?:\\s?ff?\\.?|\\s?[-–]\\s?\\d+)?\\s*\\.?\\s*$|\\bISBN\\b|\\((?:Hrsg|Hg)\\.\\)|\\bHrsg\\.\\s|(?:^|\\s)In:\\s|https?://|\\bwww\\.\\w|\\b(?:Abgerufen am|Zugriff am|Zugegriffen am|Retrieved|Accessed)\\b|^\\(\\d{4}[a-z]?[,)]|\\(\\d{4}[a-z]?(?:,\\s[^)]{1,25})?\\)\\.\\s+\\p{Lu}|^\\p{Lu}[\\p{L}'-]+,\\s(?:\\p{Lu}\\.\\s?)+(?:[,&]|u\\.|und|\\(\\d{4})")
         /** "zwar" ohne Gegenstueck im selben Satz: die Aussage ist nur halb */
         val HALF_CONCESSION_REGEX = Regex("(?i)\\b(?:zwar|einerseits)\\b")
         val CONCESSION_COUNTER_REGEX = Regex("(?i)\\b(?:aber|doch|jedoch|allerdings|andererseits|dennoch|trotzdem)\\b")
@@ -935,7 +936,7 @@ class DeterministicVerifier {
             "isch", "ische", "ischen", "ischer", "lich", "liche", "lichen", "licher", "ung", "ungen", "ig", "ige", "igen",
             "in", "innen", "te", "ten", "et", "ete", "eten", "st", "ste", "sten", "al", "ale", "alen", "iv", "ive", "iven"
         )
-        /** Woerter, nach denen ein Satz in der Quelle eigenstaendig weitergehen kann ("Denn Wissen zählt …"). */
+        /** Woerter, nach denen ein Satz in der Quelle eigenstaendig weitergehen kann ("Denn Qualität zählt …"). */
         val SENTENCE_CONNECTORS = setOf("denn", "doch", "aber", "auch", "zudem", "daher", "deshalb", "außerdem", "so", "und",
             "jedoch", "allerdings", "dabei", "somit", "also", "but", "and", "so", "however", "also")
         val OPENING_PRONOUNS = setOf("sie", "er", "es", "diese", "dies", "dieser", "dieses", "they", "it", "this", "these")

@@ -16,7 +16,7 @@ open class ContentResolver {
 
     open fun query(uri: Uri, projection: Array<String>?, selection: String?, selectionArgs: Array<String>?, sortOrder: String?): Cursor? {
         val f = uri.toFile() ?: return null
-        return Cursor(mapOf(OpenableColumns.DISPLAY_NAME to f.name))
+        return Cursor(mapOf(OpenableColumns.DISPLAY_NAME to f.name, OpenableColumns.SIZE to f.length().toString()))
     }
 
     private fun Uri.toFile(): File? = if (scheme == "file" || scheme == null) path?.let(::File) else null

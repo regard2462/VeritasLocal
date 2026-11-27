@@ -13,8 +13,8 @@ android {
         applicationId = "com.veritas.localresearch"
         minSdk = 28
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.3.1"
+        versionCode = 7
+        versionName = "1.4.0"
 
         ndk {
             abiFilters += listOf("arm64-v8a")
@@ -96,5 +96,7 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jsoup:jsoup:1.19.1")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    // Texterkennung fuer gescannte PDFs und Bilder (Tesseract 5, Apache-2.0)
+    implementation("cz.adaptech.tesseract4android:tesseract4android-openmp:4.9.0")
     testImplementation("junit:junit:4.13.2")
 }
