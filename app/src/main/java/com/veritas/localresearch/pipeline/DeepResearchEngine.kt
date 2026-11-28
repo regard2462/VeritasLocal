@@ -30,6 +30,7 @@ import com.veritas.localresearch.verification.DeterministicVerifier
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.json.Json
@@ -49,6 +50,30 @@ class DeepResearchEngine(
 
     /** Sprache der aktuellen Frage, z. B. "Deutsch"; Suchanfragen und Antwort werden darin formuliert. */
     @Volatile private var answerLanguage = "Deutsch"
+
+    private val _live = kotlinx.coroutines.flow.MutableStateFlow<List<com.veritas.localresearch.domain.LiveEvent>>(emptyList())
+
+    /** Live-Liste des laufenden Rechercheschritts (hoechstens 300 Eintraege, neueste zuletzt). */
+    val live: kotlinx.coroutines.flow.StateFlow<List<com.veritas.localresearch.domain.LiveEvent>> = _live
+
+    private fun live(kind: com.veritas.localresearch.domain.LiveKind, text: String, url: String = "") {
+        val e = com.veritas.localresearch.domain.LiveEvent(kind, text.replace(Regex("\\s+"), " ").trim().take(400), url)
+        _live.update { (it + e).takeLast(300) }
+    }
+
+    /** Seite geladen oder nicht: Eintrag fuer die Live-Liste. */
+    private fun liveDoc(url: String, doc: ScrapedDocument?, viaLink: Boolean = false) {
+        val domain = HiddenWebScraper.extractDomain(url)
+        if (doc == null) live(com.veritas.localresearch.domain.LiveKind.FAIL, domain, url)
+        else live(if (viaLink) com.veritas.localresearch.domain.LiveKind.LINK else com.veritas.localresearch.domain.LiveKind.OPEN,
+            "${doc.title} · $domain", url)
+    }
+
+    /** Gepruefte und verworfene Aussagen fuer die Live-Liste; Gruende stehen im Protokoll, gezeigt wird die Aussage. */
+    private fun liveClaims(verified: List<VerifiedClaim>, rejections: List<String>) {
+        verified.forEach { live(com.veritas.localresearch.domain.LiveKind.FACT, "${it.claim} · ${it.chunk.domain}", it.chunk.url) }
+        rejections.forEach { r -> live(com.veritas.localresearch.domain.LiveKind.REJECT, r.substringAfter(": ").substringBefore(" | ")) }
+    }
 
     /** Gewuenschte Antwortlaenge des aktuellen Laufs. */
     @Volatile private var length = LengthSpec.of(AnswerLength.MEDIUM)
@@ -70,7 +95,7 @@ class DeepResearchEngine(
 
     /** Zeitgruppe einer Stufe (Schluessel wie "st_search") fuer die Dauer-Anzeige unter der Antwort. */
     private fun stageKey(stage: String): String = when (stage) {
-        "st_plan" -> "tg_plan"
+        "st_plan", "st_plan_paper" -> "tg_plan"
         "st_search" -> "tg_search"
         "st_load" -> "tg_load"
         "st_docs" -> "tg_docs"
@@ -115,6 +140,7 @@ class DeepResearchEngine(
     ): ResearchReport {
         chunker.resetIds()
         retriever.clear()
+        _live.value = emptyList()
         docsOnly = !useWeb && docs.isNotEmpty() && docStore != null
         overview = docsOnly && isOverviewQuestion(question)
 
@@ -191,6 +217,11 @@ class DeepResearchEngine(
             if (docLang != null && docLang != qLang) { answerLanguage = docLang.name; crossLang = true }
         }
         length = spec
+        // Selbst festgelegte Wortzahl mit Websuche: geplante Recherche wie eine Hausarbeit, Kapitel fuer Kapitel
+        val planned = spec.words > 0 && useWeb && docs.isEmpty() && lengthOverride == null
+        webScraper.maxPageChars = if (planned) 40_000 else 14_000
+        pageTopicCache.clear()
+        var plannedChapters: List<Pair<String, List<VerifiedClaim>>> = emptyList()
         val synthesisTokens = (profile.synthesisTokens * length.tokenFactor).toInt()
         // Eigene Dokumente duerfen mehr Abschnitte stellen als eine Webseite; ohne Web gibt es keine Grenze je Datei
         val localCap = if (docsOnly) profile.finalChunks * 2 else profile.maxPerDomain + 2
@@ -215,6 +246,18 @@ class DeepResearchEngine(
             }
         }
 
+        val verification: DeterministicVerifier.ClaimVerificationResult
+        val topRanked: List<RankedChunk>
+        if (planned) {
+            val res = plannedResearch(question, qLang, maxRounds, profile, cfg.useWikipedia, cfg.useArxiv, visitedUrls,
+                scrapedDomains) { r, st, d, a -> emit(r, st, d, args = a) }
+            totalScrapedDocs += res.pages
+            executedRounds = res.rounds
+            var n = 0
+            plannedChapters = res.chapters.map { (t, cs) -> t to cs.map { vc -> vc.copy(citationIndex = ++n) } }
+            verification = DeterministicVerifier.ClaimVerificationResult(plannedChapters.flatMap { it.second }, res.rejected)
+            topRanked = res.used
+        } else {
         // === STUFE 1: Query-Zerlegung via GBNF, parallel dazu schon die Suche mit der Originalfrage ===
         emit(1, "st_plan", if (docsOnly) tr("d_plan_docs") else tr("d_plan_web"))
         val (plan, earlyResults) = if (docsOnly) {
@@ -272,6 +315,15 @@ class DeepResearchEngine(
                     picked[rc.chunk.chunkId] = rc
                 }
             }
+            // Selbst festgelegte Wortzahl: reicht die Vielfalt der Websites nicht, fuellen weitere Abschnitte
+            // derselben Websites auf (ein Fachwiki kann die einzige gute Quelle sein)
+            if (spec.words > 0 && picked.size < pickLimit) {
+                fill@ for (i in 0 until maxLen) for (list in lists) {
+                    if (picked.size >= pickLimit) break@fill
+                    val rc = list.getOrNull(i) ?: continue
+                    picked.putIfAbsent(rc.chunk.chunkId, rc)
+                }
+            }
             // Eigene Dokumente ohne Themenfilter: Abschnitte, die zur eigentlichen Frage weit hinter dem besten liegen,
             // kommen ueber eine abwegige Teilfrage herein und fallen weg (mindestens 4 bleiben)
             if (rerank && parentOf.isNotEmpty() && picked.size > 4) {
@@ -296,6 +348,7 @@ class DeepResearchEngine(
 
             // === STUFE 2: Parallele Suche (APIs + Websuche gleichzeitig) ===
             emit(round, "st_search", currentQueries.joinToString(" • "), args = listOf(round))
+            currentQueries.forEach { live(com.veritas.localresearch.domain.LiveKind.SEARCH, it) }
             val newDocs = mutableListOf<ScrapedDocument>()
             val candidateUrls = mutableListOf<Pair<String, String>>()
 
@@ -321,7 +374,7 @@ class DeepResearchEngine(
                 }
 
                 apiJobs.awaitAll().flatten().forEach { doc ->
-                    if (visitedUrls.add(doc.url)) newDocs.add(doc)
+                    if (visitedUrls.add(doc.url)) { newDocs.add(doc); liveDoc(doc.url, doc) }
                 }
 
                 // Ergebnisse abwechselnd je Suchanfrage einsammeln, damit jeder Teilaspekt Quellen bekommt
@@ -353,6 +406,7 @@ class DeepResearchEngine(
                             scrapeSemaphore.withPermit {
                                 val domain = HiddenWebScraper.extractDomain(url)
                                 val doc = webScraper.scrapePage(url, title)
+                                liveDoc(url, doc)
                                 val done = completed.incrementAndGet()
                                 emit(round, "st_load", domain, args = listOf(done, urlsToScrape.size))
                                 doc
@@ -425,6 +479,10 @@ class DeepResearchEngine(
             }
         }
 
+        // Frage ohne erkennbare Sprache (kurz, viele Eigennamen): es gilt die Sprache der geladenen Quellen, sonst
+        // schreibt das Modell in einer anderen Sprache als die Belege und jeder Satz faellt durch die Pruefung
+        if (qLang == null && !docsOnly) sourcesLanguage()?.let { answerLanguage = it.name }
+
         // === Finale Kontext-Diaet: Top 8 Chunks (max. 2 pro Domain, Cross-Source-gewichtet) ===
         // Ueberblick: Abschnitte gleichmaessig ueber jedes Dokument verteilt statt nach Aehnlichkeit zur Frage
         val overviewPick = if (overview) overviewChunks(profile.finalChunks * 2, question) else null
@@ -436,7 +494,7 @@ class DeepResearchEngine(
             rankAcrossAspects()
         }
         // Eigene Dokumente: statt des kleinen Suchabschnitts geht der ganze Absatz an das Modell (je Absatz einmal)
-        val topRanked = if (parentOf.isEmpty()) topRankedSmall else topRankedSmall
+        topRanked = if (parentOf.isEmpty()) topRankedSmall else topRankedSmall
             .map { rc -> parentOf[rc.chunk.chunkId]?.let { rc.copy(chunk = it) } ?: rc }
             .distinctBy { it.chunk.chunkId }
             .take(maxOf(4, profile.finalChunks * 2 / 3))
@@ -486,6 +544,7 @@ class DeepResearchEngine(
             sameTopicThreshold = retriever.sameTopicThreshold
         )
         firstPass.rejections.forEach { Log.i("VeritasReject", it.take(400)) }
+        liveClaims(firstPass.verifiedClaims, firstPass.rejections)
         // Liefert das Modell zu wenig Brauchbares, kommen die am besten passenden Quellsaetze woertlich dazu
         // (vom Reranker gegen die Frage bewertet). Woertliche Saetze koennen nichts erfinden.
         // Hauptthema der Frage: Fakten zaehlen nur aus Quellen, die es behandeln (bei "Solarstrom und Solarspeicher …" muss
@@ -536,10 +595,11 @@ class DeepResearchEngine(
         // Sicherung: bleibt durch den Themencheck fast nichts, war das Hauptthema falsch erkannt
         val onTopic = if (topicOk.size >= 3 || topicOk.size * 2 >= wordOk.size) topicOk else wordOk
         onTopic.size.let { n -> if (n < combined.verifiedClaims.size) Log.i("VeritasReject", "themenfremd: ${combined.verifiedClaims.size - n}") }
-        val verification = combined.copy(
+        verification = combined.copy(
             verifiedClaims = onTopic.mapIndexed { i, vc -> vc.copy(citationIndex = i + 1) },
             rejectedCount = combined.rejectedCount + (combined.verifiedClaims.size - onTopic.size)
         )
+        }
 
         if (verification.verifiedClaims.isEmpty()) {
             val fallbackMsg = if (docsOnly) tr("ans_noquote_docs") else tr("ans_noquote_web")
@@ -578,8 +638,16 @@ class DeepResearchEngine(
             verified = verification.verifiedClaims.size,
             rejected = verification.rejectedCount
         )
-        // Ab Standard-Tiefe und genug Fakten: erst Gliederung, dann Abschnitt fuer Abschnitt
-        val rawAnswer = (if (length.outline && verification.verifiedClaims.size >= 4 && (maxRounds >= 2 || length.detailed || length.words > 0)) {
+        // Geplante Recherche: Kapitel fuer Kapitel aus den dort gesammelten Fakten.
+        // Sonst ab Standard-Tiefe und genug Fakten: erst Gliederung, dann Abschnitt fuer Abschnitt
+        val rawAnswer = (if (planned) writeChapters(
+            question, plannedChapters,
+            onSection = { i, n ->
+                emit(executedRounds, "st_write", tr("d_write"),
+                    verified = verification.verifiedClaims.size, rejected = verification.rejectedCount, args = listOf(i, n))
+            },
+            onStreamToken = onStreamToken
+        ) else if (length.outline && verification.verifiedClaims.size >= 4 && (maxRounds >= 2 || length.detailed || length.words > 0)) {
             emit(executedRounds, "st_outline", tr("d_outline", verification.verifiedClaims.size),
                 verified = verification.verifiedClaims.size, rejected = verification.rejectedCount)
             outlineAndWrite(
@@ -603,6 +671,7 @@ class DeepResearchEngine(
         // Jeder Satz muss sich auf einen geprueften Fakt stuetzen; erfundene Saetze und Zitate fliegen raus
         // Kleine Modelle (bis etwa 2B) zerlegen beim Umformulieren oft Satzbau und Sinn: fuer sie gilt eine strengere
         // Wortlautgrenze, ab 3B duerfen Saetze freier formuliert sein. Unbekannte Groesse liegt dazwischen.
+        if (planned) Log.i("VeritasPlan", "Rohtext ${rawAnswer.length} Zeichen, ${rawAnswer.lines().count { it.startsWith("## ") }} Überschriften")
         val minShare = wordingThreshold(llama.loadedModelName.orEmpty())
         val verbatim = minShare >= 0.6f
         val groundedAnswer = verifier.groundAnswer(
@@ -667,7 +736,8 @@ class DeepResearchEngine(
             totalSourcesScraped = totalScrapedDocs,
             totalChunksIndexed = retriever.totalChunks(),
             usedChunks = topRanked,
-            headingRanges = headingRanges
+            headingRanges = headingRanges,
+            wordTarget = length.words
         ))
     }
 
@@ -787,12 +857,16 @@ class DeepResearchEngine(
         question: String,
         chunks: List<TextChunk>,
         want: Int,
-        alreadyQuoted: List<String>
+        alreadyQuoted: List<String>,
+        /** Nur Saetze, die hoechstens so weit hinter dem besten liegen (Reranker-Bewertung); null = keine Grenze. */
+        margin: Float? = null,
+        /** Geplante Recherche: ein Suchbegriff je Satz genuegt, keine Grenze je Website (der Reranker waehlt). */
+        loose: Boolean = false
     ): List<com.veritas.localresearch.domain.RawClaimDto> {
         if (want <= 0) return emptyList()
         // Nur Saetze mit genug Suchbegriffen der Frage
         val qWords = questionWords(question)
-        val need = if (overview || crossLang) 0 else if (qWords.size >= 3) 2 else 1
+        val need = if (overview || crossLang) 0 else if (loose) 1 else if (qWords.size >= 3) 2 else 1
         val candidates = chunks.flatMap { c ->
             val joined = com.veritas.localresearch.verification.joinSoftBreaks(c.rawText)
             val pieces = joined.split(SENTENCE_END).map { it.trim() }
@@ -802,13 +876,13 @@ class DeepResearchEngine(
                 .filter { s ->
                     val n = s.split(SPACES).size.let { if (it < 3) s.length / 2 else it }
                     n in 8..45 && s.count(Char::isLetter) > s.length / 2 &&
-                        !NOT_A_STATEMENT.containsMatchIn(s) && !OPEN_FRAGMENT.containsMatchIn(s) &&
+                        !NOT_A_STATEMENT.containsMatchIn(s) && !OPEN_FRAGMENT.containsMatchIn(s) && !isBoilerplate(s) &&
                         s.first().isLetter() && !s.first().isLowerCase() && !s.endsWith("?") && !s.endsWith("？") &&
                         (qWords.isEmpty() || questionWordHits(question, s) >= need) &&
                         alreadyQuoted.none { q -> q.contains(s) || s.contains(q) }
                 }
                 .map { c to it }
-        }.distinctBy { it.second }.take(80)
+        }.distinctBy { it.second }.take(if (length.words > 0) 200 else 80)
         if (candidates.isEmpty()) return emptyList()
         val scores: FloatArray = (if (reranker?.isReady == true) reranker.score(question, candidates.map { it.second }) else null)
             ?: run {
@@ -818,10 +892,12 @@ class DeepResearchEngine(
                 }
             }
         val perDomain = HashMap<String, Int>()
+        val floor = if (margin != null && reranker?.isReady == true) (scores.maxOrNull() ?: 0f) - margin else Float.NEGATIVE_INFINITY
         return candidates.indices.sortedByDescending { scores[it] }
+            .filter { i -> scores[i] >= floor }
             .filter { i ->
                 val d = candidates[i].first.domain
-                val ok = docsOnly || (perDomain[d] ?: 0) < (if (length.detailed) 3 else 2) + length.words / 1000
+                val ok = docsOnly || loose || (perDomain[d] ?: 0) < (if (length.detailed) 3 else 2) + length.words / 1000
                 if (ok) perDomain[d] = (perDomain[d] ?: 0) + 1
                 ok
             }
@@ -1004,6 +1080,325 @@ class DeepResearchEngine(
         return answer.toString().trim()
     }
 
+    // === Geplante Recherche fuer lange Antworten ===
+
+    @kotlinx.serialization.Serializable
+    private data class PlanChapterDto(val title: String = "", val queries: List<String> = emptyList())
+
+    @kotlinx.serialization.Serializable
+    private data class ResearchPlanDto(
+        val chapters: List<PlanChapterDto> = emptyList(),
+        @kotlinx.serialization.SerialName("en_query") val englishQuery: String = ""
+    )
+
+    private class PlannedResult(
+        val chapters: List<Pair<String, List<VerifiedClaim>>>,
+        val rejected: Int,
+        val used: List<RankedChunk>,
+        val pages: Int,
+        val rounds: Int
+    )
+
+    /** Treffer der Suchbegriffe der Frage je Seite (alle Abschnitte einer Adresse), fuer den Themencheck. */
+    private val pageTopicCache = java.util.concurrent.ConcurrentHashMap<String, Int>()
+
+    private fun pageTopicHits(question: String, url: String): Int = pageTopicCache.getOrPut(url) {
+        val qWords = questionWords(question)
+        if (qWords.isEmpty()) return@getOrPut Int.MAX_VALUE
+        retriever.getAllChunks().filter { it.url == url }.sumOf { c ->
+            "${c.title} ${c.rawText}".lowercase().split(NON_WORD).count { w -> w.length > 4 && qWords.any { q -> sameWord(q, w) } }
+        }
+    }
+
+    /**
+     * Fakt gehoert zum Thema der Frage: ein Suchbegriff der Frage steht in der Aussage, im Zitat oder im Seitentitel,
+     * oder die Seite nennt die Suchbegriffe mindestens dreimal (eine Unterseite eines Fachwikis ueber Netzwerkpakete
+     * nennt "Paket", aber in der Regel auch das Spiel oder Programm, um das es geht).
+     */
+    private fun onQuestionTopic(question: String, vc: VerifiedClaim): Boolean =
+        questionWordHits(question, "${vc.claim} ${vc.exactQuote} ${vc.chunk.title}") >= 1 || pageTopicHits(question, vc.chunk.url) >= 3
+
+    /** Haeufigste Sprache der geladenen Seiten. */
+    private fun sourcesLanguage(): LanguageDetector.Language? =
+        retriever.getAllChunks().groupBy { it.url }.values
+            .mapNotNull { cs -> LanguageDetector.detect(cs.take(4).joinToString(" ") { it.rawText }) }
+            .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
+
+    /**
+     * Rechercheplan: Kapitel wie in einer Hausarbeit (Einordnung, Teilaspekte, Probleme, offene Fragen), jedes mit
+     * eigenen Suchanfragen.
+     */
+    private suspend fun planChapters(question: String, count: Int): ResearchPlanDto {
+        val sys = "Du planst eine wissenschaftliche Hausarbeit, die die Frage vollständig beantwortet. Bilde genau $count Kapitel " +
+            "mit kurzen, sachlichen Überschriften auf $answerLanguage: zuerst Begriff, Hintergrund und Einordnung, dann je ein " +
+            "Kapitel pro Teilaspekt, Verfahren, Werkzeug oder Teilgebiet, dann Probleme, Grenzen und Risiken, zuletzt aktuelle " +
+            "Entwicklungen und offene Fragen. Jedes Kapitel behandelt etwas anderes. Gib je Kapitel 2 kurze Web-Suchanfragen in " +
+            "der Sprache der Frage, die genau dieses Kapitel belegen; jede nennt das Hauptthema der Frage und die Fachbegriffe " +
+            "des Kapitels. Dazu 1 kurze englische Suchanfrage zur ganzen Frage (en_query). Antworte ausschließlich als JSON."
+        val out = llama.generate(sys, "Frage: $question", GbnfGrammars.RESEARCH_PLAN, temperature = 0.05f, maxTokens = 120 + 90 * count)
+        val plan = runCatching { json.decodeFromString<ResearchPlanDto>(out) }
+        Log.i("VeritasPlan", "Plan (${out.length} Zeichen, ok=${plan.isSuccess}): ${out.take(1500)}")
+        return plan.getOrDefault(ResearchPlanDto())
+    }
+
+    /** Passt ein Link (Linktext und Pfad) zum Kapitel: Zahl der Kapitelwoerter, die darin vorkommen. */
+    private fun linkScore(url: String, anchor: String, chapterWords: Set<String>): Int {
+        val path = url.substringAfter("://").substringAfter('/', "")
+        val words = "$anchor $path".lowercase().split(NON_WORD).filter { it.length > 3 }.toSet()
+        return chapterWords.count { c -> words.any { w -> sameWord(c, w) } }
+    }
+
+    /**
+     * Geplante Recherche: erst ein Plan mit Kapiteln, dann fuer jedes Kapitel suchen, Seiten und passende Unterseiten
+     * derselben Websites lesen, Fakten herausziehen und pruefen, bis das Kapitel seinen Anteil an der Wortzahl hat
+     * oder keine neuen Quellen mehr kommen. Die Zahl der Versuche je Kapitel folgt der Tiefe.
+     */
+    private suspend fun plannedResearch(
+        question: String,
+        questionLang: LanguageDetector.Language?,
+        maxRounds: Int,
+        profile: DepthProfile,
+        useWikipedia: Boolean,
+        useArxiv: Boolean,
+        visitedUrls: MutableSet<String>,
+        scrapedDomains: MutableSet<String>,
+        emit: (Int, String, String, List<Any>) -> Unit
+    ): PlannedResult {
+        var lang = questionLang
+        val count = length.maxSections
+        emit(1, "st_plan_paper", tr("d_plan_paper", count), emptyList())
+        // Abgeschnittenes oder kaputtes JSON: zweiter Versuch mit weniger Kapiteln
+        val plan = planChapters(question, count).let { p ->
+            if (p.chapters.size >= 2 || count <= 4) p else planChapters(question, (count / 2).coerceAtLeast(4))
+        }
+        val mainTerms = questionWords(question).take(3).joinToString(" ")
+        fun withTopic(q: String) = if (mainTerms.isBlank() || questionWordHits(question, q) >= 1) q else "$mainTerms $q"
+        var chapters = plan.chapters
+            .map { c -> c.title.trim().take(80) to c.queries.map { it.trim() }.filter { it.isNotBlank() }.distinct().take(3) }
+            .filter { it.first.isNotBlank() }
+            .distinctBy { it.first.lowercase() }
+            .take(count)
+            .map { (t, qs) -> t to qs.ifEmpty { listOf(t) }.map(::withTopic) }
+        if (chapters.size < 2) {
+            // Plan unbrauchbar: Teilaspekte aus der normalen Zerlegung werden zu Kapiteln
+            chapters = planQueries(question, count, detailed = true).queries.map { it.trim() }.filter { it.isNotBlank() }
+                .distinct().take(count).map { it to listOf(withTopic(it)) }
+                .ifEmpty { listOf(question to listOf(question)) }
+        }
+
+        val linkPool = LinkedHashMap<String, String>()
+        var pages = 0
+        fun collectLinks(docs: List<ScrapedDocument>) {
+            for (d in docs) for ((u, t) in d.links) if (u !in visitedUrls && linkPool.size < 3000) linkPool.putIfAbsent(u, t)
+        }
+        suspend fun indexDocs(docs: List<ScrapedDocument>, round: Int, l: LanguageDetector.Language?) {
+            val kept = docs.filterNot { isLegalPage(it) || (l != null && LanguageDetector.isOtherLanguage(it.title + " " + it.cleanText.take(3000), l)) }
+            if (kept.isEmpty()) return
+            collectLinks(kept)
+            kept.forEach { scrapedDomains.add(it.domain) }
+            pages += kept.size
+            emit(round, "st_index", tr("d_index", kept.size), emptyList())
+            retriever.indexChunks(kept.flatMap { d ->
+                val clean = if (d.sourceType == SourceType.WIKIPEDIA) d.copy(cleanText = WIKI_HEADING.replace(d.cleanText) { m -> m.groupValues[1].trim() + "\n" }) else d
+                chunker.chunkDocument(clean)
+            })
+            pageTopicCache.clear()
+        }
+        suspend fun loadAndIndex(urls: List<Pair<String, String>>, round: Int, info: String, viaLinks: Set<String> = emptySet()) {
+            if (urls.isEmpty()) return
+            val sem = Semaphore(4)
+            val done = AtomicInteger(0)
+            emit(round, "st_load", "$info • ${tr("d_load", urls.size)}", listOf(0, urls.size))
+            val loaded = coroutineScope {
+                urls.map { (u, t) ->
+                    async {
+                        sem.withPermit {
+                            webScraper.scrapePage(u, t).also {
+                                liveDoc(u, it, u in viaLinks)
+                                emit(round, "st_load", HiddenWebScraper.extractDomain(u), listOf(done.incrementAndGet(), urls.size))
+                            }
+                        }
+                    }
+                }.awaitAll().filterNotNull()
+            }
+            indexDocs(loaded, round, lang)
+        }
+        suspend fun search(queries: List<String>, n: Int): List<Pair<String, String>> = coroutineScope {
+            queries.forEach { live(com.veritas.localresearch.domain.LiveKind.SEARCH, it) }
+            val lists = queries.map { q -> async { runCatching { webScraper.searchWeb(q, maxResults = n, lang = lang) }.getOrDefault(emptyList()) } }.awaitAll()
+            buildList {
+                val m = lists.maxOfOrNull { it.size } ?: 0
+                for (i in 0 until m) lists.forEach { l -> l.getOrNull(i)?.let { add(it.url to it.title) } }
+            }.distinctBy { it.first }.filter { it.first !in visitedUrls }
+        }
+
+        // Grundlage: Nachschlagewerke und Suche mit der ganzen Frage
+        emit(1, "st_search", question, listOf(1))
+        val startLang = lang
+        val englishOk = startLang == null || startLang.code == "en"
+        val base = coroutineScope {
+            val jobs = buildList {
+                if (useWikipedia) {
+                    add(async { factApis.fetchWikipedia(mainTerms.ifBlank { question }, lang = startLang?.wiki ?: I18n.code.let { if (it == "nb") "no" else it }, limit = 2) })
+                    if (startLang == null) add(async { factApis.fetchWikipedia(plan.englishQuery.ifBlank { question }, lang = "en", limit = 1) })
+                }
+                if (englishOk && useArxiv) add(async { factApis.fetchArxiv(plan.englishQuery.ifBlank { question }, maxResults = 2) })
+            }
+            jobs.awaitAll().flatten()
+        }.filter { visitedUrls.add(it.url) }
+        base.forEach { liveDoc(it.url, it) }
+        indexDocs(base, 1, startLang)
+        // Englische Zusatzsuche nur, wenn die Frage englisch ist oder ihre Sprache offen bleibt
+        val firstQueries = listOf(question) + (if (englishOk) listOfNotNull(plan.englishQuery.takeIf { it.isNotBlank() && !it.equals(question, true) }) else emptyList())
+        loadAndIndex(search(firstQueries, 8).take(profile.pagesFirstRound).filter { visitedUrls.add(it.first) }, 1, question)
+        // Sprache der Frage offen (kurze Frage, viele Eigennamen): die der Quellen gilt fuer Suche und Antwort
+        if (lang == null) sourcesLanguage()?.let { lang = it; answerLanguage = it.name }
+
+        // Ein geschriebener Fakt ergibt im Mittel etwa 25 Woerter; etwas mehr je Kapitel, weil nicht jedes voll wird
+        val factsNeeded = length.words / 24
+        val quota = ((factsNeeded + chapters.size - 1) / chapters.size + 1).coerceAtLeast(3)
+        val maxTries = maxRounds.coerceIn(1, 3)
+        val perPass = profile.chunksPerPass.coerceAtLeast(3)
+        val claimsPerPass = (profile.claimsPerPass + 2).coerceIn(6, 10)
+        val fastFacts = reranker?.isReady == true && settings.current.useReranker
+        // Mit schneller Satzwahl kostet ein weiterer Versuch nur Suche und Laden: zwei mehr je Kapitel
+        val tryLimit = if (fastFacts) maxTries + 2 else maxTries
+        val found = chapters.map { ArrayList<VerifiedClaim>() }
+        val seenQuotes = ArrayList<String>()
+        val extracted = HashSet<Int>()
+        val used = LinkedHashMap<Int, RankedChunk>()
+        var rejected = 0
+        fun isNew(vc: VerifiedClaim) = seenQuotes.none { q -> q.contains(vc.exactQuote) || vc.exactQuote.contains(q) }
+
+        for ((ci, chapter) in chapters.withIndex()) {
+            val (title, queries) = chapter
+            val round = ci + 1
+            val info = tr("chapter_n", ci + 1, chapters.size, title)
+            val chapterQuery = "$title ${queries.first()}"
+            val chapterWords = "$title ${queries.joinToString(" ")}".lowercase().split(NON_WORD).filter { it.length > 3 }.toSet()
+            var nextQueries = queries
+            var tries = 0
+            while (found[ci].size < quota && tries < tryLimit) {
+                tries++
+                // 1. Neue Seiten: Suchtreffer zum Kapitel und passende Unterseiten schon gelesener Websites
+                val hits = if (nextQueries.isEmpty()) emptyList() else {
+                    emit(round, "st_search", "$info • ${nextQueries.joinToString(" • ")}", listOf(round))
+                    search(nextQueries, 6).take(profile.pagesLaterRounds.coerceIn(3, 6))
+                }
+                val links = linkPool.entries.asSequence().filter { it.key !in visitedUrls }
+                    .map { e -> Triple(e.key, e.value, linkScore(e.key, e.value, chapterWords)) }
+                    .filter { it.third >= 1 }.sortedByDescending { it.third }.take(4).map { it.first to it.second }.toList()
+                loadAndIndex((hits + links).distinctBy { it.first }.filter { visitedUrls.add(it.first) }, round, info,
+                    viaLinks = links.map { it.first }.toSet() - hits.map { it.first }.toSet())
+
+                // 2. Beste, noch nicht gelesene Abschnitte zum Kapitel
+                var ranked = retriever.retrieveTopChunks(chapterQuery, topK = 30, maxPerDomain = 30)
+                    .filter { it.chunk.chunkId !in extracted }
+                if (reranker?.isReady == true && settings.current.useReranker && ranked.size > 1) {
+                    emit(round, "st_rerank", info, emptyList())
+                    val s = reranker.score(chapterQuery, ranked.map { "${it.chunk.titleWithSection}. ${it.chunk.rawText}" })
+                    if (s != null) {
+                        // Abschnitte weit hinter dem besten zum Kapitel (eine Spielanleitung beim Kapitel ueber
+                        // Netzwerkprotokolle) gehen nicht an das Modell; mindestens zwei bleiben
+                        val best = s.maxOrNull() ?: 0f
+                        ranked = ranked.indices.sortedByDescending { s[it] }
+                            .filterIndexed { rank, i -> rank < 2 || s[i] >= best - CHAPTER_MARGIN }.map { ranked[it] }
+                    }
+                }
+                // Mit Reranker waehlt er die Fakten als woertliche Saetze (Sekunden statt Minuten je Kapitel), dafuer
+                // werden mehr Abschnitte gelesen; ohne Reranker zieht das Sprachmodell die Fakten heraus
+                val pick = ranked.take(if (fastFacts) 20 else perPass * 2)
+                nextQueries = if (tries == 1) listOf(withTopic(title)).filter { q -> queries.none { it.equals(q, ignoreCase = true) } } else emptyList()
+                if (pick.isEmpty()) continue
+                pick.forEach { extracted.add(it.chunk.chunkId); used[it.chunk.chunkId] = it }
+
+                // 3. Fakten mit woertlichem Beleg, gegen den Abschnitt geprueft
+                val chunkMap = pick.associate { it.chunk.chunkId to it.chunk }
+                val ver = if (fastFacts) {
+                    emit(round, "st_extract", info, emptyList())
+                    val sentences = extractiveClaims(chapterQuery, pick.map { it.chunk }, quota - found[ci].size,
+                        seenQuotes.toList(), margin = SENTENCE_MARGIN, loose = true)
+                    emit(round, "st_verify", info, emptyList())
+                    verifier.verifyClaims(sentences, chunkMap, retriever.getAllChunks(), retriever.sameTopicThreshold)
+                } else {
+                    val passes = pick.map { it.chunk }.chunked(perPass)
+                    val raw = passes.flatMapIndexed { pi, g ->
+                        emit(round, "st_extract_n", info, listOf(pi + 1, passes.size))
+                        extractClaimsWithQuotes("$question\n($title)", g, claimsPerPass).claims
+                    }
+                    emit(round, "st_verify", info, emptyList())
+                    verifier.verifyClaims(raw, chunkMap, retriever.getAllChunks(), retriever.sameTopicThreshold)
+                }
+                ver.rejections.forEach { Log.i("VeritasReject", it.take(400)) }
+                liveClaims(emptyList(), ver.rejections)
+                rejected += ver.rejectedCount
+                val fresh = ArrayList<VerifiedClaim>()
+                fun take(list: List<VerifiedClaim>) = list.forEach { vc ->
+                    if (!onQuestionTopic(question, vc)) {
+                        rejected++
+                        Log.i("VeritasReject", "themenfremd: ${vc.claim.take(200)}")
+                        liveClaims(emptyList(), listOf("themenfremd: ${vc.claim}"))
+                    } else if (isNew(vc) && fresh.none { it.exactQuote == vc.exactQuote }) {
+                        fresh.add(vc); seenQuotes.add(vc.exactQuote)
+                        liveClaims(listOf(vc), emptyList())
+                    }
+                }
+                take(ver.verifiedClaims)
+                // Liefert das Modell zu wenig, kommen woertliche Saetze aus denselben Abschnitten dazu
+                val missing = (quota - found[ci].size - fresh.size).coerceAtMost(pick.size * 2)
+                if (missing > 0 && !fastFacts) {
+                    val extra = extractiveClaims(chapterQuery, pick.map { it.chunk }, missing, seenQuotes.toList())
+                    if (extra.isNotEmpty()) take(verifier.verifyClaims(extra, chunkMap, retriever.getAllChunks(), retriever.sameTopicThreshold).verifiedClaims)
+                }
+                found[ci].addAll(fresh)
+            }
+            Log.i("VeritasPlan", "Kapitel ${ci + 1}/${chapters.size} \"$title\": ${found[ci].size} Fakten nach $tries Versuchen")
+        }
+        return PlannedResult(chapters.mapIndexed { i, c -> c.first to found[i].toList() }, rejected, used.values.toList(), pages, chapters.size)
+    }
+
+    /**
+     * Schreibt die Kapitel der geplanten Recherche: je Kapitel die Ueberschrift, dann Absaetze aus hoechstens acht
+     * Fakten (so bleibt jeder Prompt im Kontextfenster, und jeder Fakt bekommt einen eigenen Satz).
+     */
+    private suspend fun writeChapters(
+        question: String,
+        chapters: List<Pair<String, List<VerifiedClaim>>>,
+        onSection: (Int, Int) -> Unit,
+        onStreamToken: (String) -> Unit
+    ): String? {
+        val filled = chapters.filter { it.second.isNotEmpty() }
+        if (filled.isEmpty()) return null
+        val answer = StringBuilder()
+        for ((i, chapter) in filled.withIndex()) {
+            val (title, facts) = chapter
+            onSection(i + 1, filled.size)
+            val heading = "## $title\n"
+            answer.append(heading)
+            onStreamToken(heading)
+            val batches = facts.chunked(8)
+            for ((bi, batch) in batches.withIndex()) {
+                val sys = """
+                    Du schreibst einen Absatz eines Kapitels einer Hausarbeit auf $answerLanguage, ausschließlich aus den gelieferten GEPRÜFTEN FAKTEN.
+                    - Verwende jeden Fakt, jeweils in einem eigenen Satz mit seiner Quellennummer einzeln dahinter: [3].
+                    - Schreibe keine Zitate ab und keine Kennzeichnungen wie „Quelle“ oder „Beleg“.
+                    - Kein eigenes Vorwissen, keine neuen Zahlen oder Jahreszahlen.
+                    - Keine Überschrift, keine Einleitung zur Gesamtfrage, kein Fazit.
+                    - Ordne die Sätze so, dass ein zusammenhängender Absatz entsteht.
+                """.trimIndent()
+                val part = if (batches.size > 1) " (Absatz ${bi + 1} von ${batches.size})" else ""
+                val usr = "Frage: $question\nKapitel: $title$part\n\nGEPRÜFTE FAKTEN:\n${batch.joinToString("\n") { factLine(it) }}\n\nSchreibe jetzt den Absatz:"
+                val raw = llama.generate(sys, usr, null, temperature = 0.1f, maxTokens = (90 * batch.size + 60).coerceAtMost(1100),
+                    onToken = onStreamToken).trim()
+                Log.i("VeritasPlan", "Schreiben \"$title\" ${bi + 1}/${batches.size}: ${batch.size} Fakten, Prompt ${usr.length} Zeichen, " +
+                    "Text ${raw.length} Zeichen: ${raw.take(120)}")
+                answer.append(cutSectionText(raw)).append("\n\n")
+                onStreamToken("\n\n")
+            }
+        }
+        return answer.toString().trim()
+    }
+
     companion object {
         /**
          * Abschnittstext ohne eigene Ueberschrift; beginnt das Modell darin schon den naechsten Abschnitt ("… nicht.## Kosten"),
@@ -1025,6 +1420,12 @@ class DeepResearchEngine(
 
         /** Abstand der Reranker-Bewertung zum besten Abschnitt, ab dem ein Abschnitt eigener Dokumente wegfaellt. */
         private const val RELEVANCE_MARGIN = 1.8f
+
+        /** Wie RELEVANCE_MARGIN, fuer die Abschnitte eines Kapitels der geplanten Recherche (Webseiten streuen mehr). */
+        private const val CHAPTER_MARGIN = 2.5f
+
+        /** Abstand einzelner Saetze zum besten Satz eines Kapitels (Saetze streuen staerker als Abschnitte). */
+        private const val SENTENCE_MARGIN = 3.5f
 
         /** "Kapitel 3", "Chapter 12", "Abschnitt 4" in der Frage. */
         private val CHAPTER_REF = Regex("(?i)\\b(?:kapitel|teil|abschnitt|chapter|part|section|lektion|unit)\\s+(\\d{1,3})\\b")
@@ -1051,5 +1452,25 @@ class DeepResearchEngine(
         /** Klammer zu ohne Klammer auf davor: Satz beginnt mitten in einer Klammer. */
         val WS_RUN = Regex("\\s+")
         val OPEN_FRAGMENT = Regex("^[^(]*\\)")
+
+        /** Seitenbausteine: Nutzungsbedingungen, Lizenz- und Datenschutzhinweise, Selbstbeschreibung der Website. */
+        val BOILERPLATE = Regex("(?i)terms of (?:service|use)|privacy policy|cookie|all rights reserved|your use of|subject to our|" +
+            "this (?:page|website|site|wiki) (?:is|was|contains|provides)|see this page|(?:is|are) a (?:publicly accessible|public|online)[^.]{0,40}(?:wiki|website|collaboration)|" +
+            "\\bwiki is\\b|editable website|sign up|subscribe|newsletter|click here|read more|" +
+            "\\bas is\\b|without (?:any )?warrant|merchantability|fitness for a particular|limitation of liability|indemnif|you agree|we reserve the right|" +
+            "virtual (?:items|currency)|free[- ]trial|your subscription|moderators?\\b|\\bfandom\\b|not necessarily (?:been )?reviewed|" +
+            "grant (?:this|a|the) licen[cs]e|necessary rights|cannot guarantee the (?:validity|accuracy)|" +
+            "nutzungsbedingungen|datenschutz|alle rechte vorbehalten|diese (?:seite|website) (?:ist|enthält|bietet)|hier klicken|weiterlesen|" +
+            "ohne (?:jede )?gewähr|haftungsausschluss")
+
+        /** Rechtstexte als ganze Seite: AGB, Lizenz, Datenschutz, Haftungsausschluss. */
+        val LEGAL_PAGE = Regex("(?i)/(?:terms|tos|legal|eula|licen[cs]e|privacy|disclaimer|polic(?:y|ies)|agb|impressum|datenschutz)(?:[-_/.?#]|$)")
+        val LEGAL_TITLE = Regex("(?i)terms of (?:service|use)|privacy policy|end[- ]user licen[cs]e|\\beula\\b|disclaimer|nutzungsbedingungen|datenschutzerklärung|\\bagb\\b|impressum")
+
+        fun isLegalPage(d: ScrapedDocument): Boolean =
+            d.sourceType != SourceType.WIKIPEDIA && (LEGAL_PAGE.containsMatchIn(d.url) || LEGAL_TITLE.containsMatchIn(d.title))
+
+        /** Ein Satz, der nichts ueber das Thema sagt, sondern ueber die Website, auf der er steht. */
+        fun isBoilerplate(sentence: String): Boolean = BOILERPLATE.containsMatchIn(sentence)
     }
 }

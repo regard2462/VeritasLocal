@@ -74,6 +74,14 @@ internal val HU: Map<String, String> = mapOf(
     "eng_bing" to "Nagy index, sok PDF és hivatalos oldal",
     "eng_startpage" to "Google-találatok követés nélkül",
     "eng_mojeek" to "Saját index, VPN-címeknél gyakran captchát mutat",
+    "eng_seznam" to "Cseh keresőmotor saját indexszel, sok nyelven jó találatok",
+    "eng_naver" to "Koreai keresőmotor, más nyelvű oldalakat is talál",
+    "eng_mwmbl" to "Nyílt, közösségi index, csak angol kérdésekhez",
+    "captcha_hint" to "A(z) {0} ellenőrizni szeretné, hogy ember keres-e. A keresés a többi keresővel folytatódik.",
+    "captcha_solve" to "Megoldom",
+    "captcha_title" to "Ellenőrzés: {0}",
+    "captcha_info" to "Oldd meg a tesztet az oldalon. Utána az alkalmazás újra a(z) {0} keresőt használja.",
+    "captcha_done" to "Kész",
     "eng_marginalia" to "Kis, szövegközpontú web, nyilvános API-kulcs",
     "eng_searxng_name" to "Saját SearXNG-példány",
     "eng_searxng" to "A példányban engedélyezni kell a JSON-kimenetet",
@@ -236,5 +244,11 @@ internal val HU: Map<String, String> = mapOf(
     "len_custom" to "Egyéni",
     "len_words" to "{0} szó",
     "len_hint" to "Körülbelül {0} szó. A hosszabb válaszok több forrást néznek át, és tovább tartanak.",
-    "pages_one" to "1 oldal"
+    "pages_one" to "1 oldal",
+    "st_plan_paper" to "1. lépés: kutatási terv",
+    "d_plan_paper" to "{0} fejezet tervezése, mint egy szemináriumi dolgozatnál…",
+    "chapter_n" to "{0}/{1}. fejezet: {2}",
+    "len_missed" to "{0} szó a kb. {1}-ból: a talált források nem tartalmaztak több ellenőrzött tényt. Nagyobb mélység vagy tágabb kérdés többet talál.",
+    "live_show" to "Élő követés",
+    "live_hide" to "Élő nézet elrejtése"
 )

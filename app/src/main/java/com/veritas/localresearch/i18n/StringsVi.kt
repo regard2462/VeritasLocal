@@ -72,6 +72,14 @@ internal val VI: Map<String, String> = mapOf(
     "eng_bing" to "Chỉ mục lớn, nhiều PDF và trang chính thức",
     "eng_startpage" to "Kết quả Google không theo dõi",
     "eng_mojeek" to "Chỉ mục riêng, thường hiện Captcha với địa chỉ VPN",
+    "eng_seznam" to "Công cụ tìm kiếm Séc có chỉ mục riêng, kết quả tốt ở nhiều ngôn ngữ",
+    "eng_naver" to "Công cụ tìm kiếm Hàn Quốc, cũng tìm được trang bằng ngôn ngữ khác",
+    "eng_mwmbl" to "Chỉ mục mở do cộng đồng xây dựng, chỉ cho câu hỏi tiếng Anh",
+    "captcha_hint" to "{0} muốn kiểm tra người đang tìm kiếm là con người. Việc tìm kiếm tiếp tục với các công cụ khác.",
+    "captcha_solve" to "Tự giải",
+    "captcha_title" to "Kiểm tra tại {0}",
+    "captcha_info" to "Hãy giải bài kiểm tra trên trang. Sau đó ứng dụng sẽ tìm lại bằng {0}.",
+    "captcha_done" to "Xong",
     "eng_marginalia" to "Web nhỏ, nhiều văn bản, khóa API công khai",
     "eng_searxng_name" to "Máy chủ SearXNG riêng",
     "eng_searxng" to "Cần bật đầu ra JSON trên máy chủ",
@@ -230,5 +238,11 @@ internal val VI: Map<String, String> = mapOf(
     "len_custom" to "Tùy chỉnh",
     "len_words" to "{0} từ",
     "len_hint" to "Khoảng {0} từ. Câu trả lời dài hơn tìm trong nhiều nguồn hơn và mất nhiều thời gian hơn.",
-    "pages_one" to "1 trang"
+    "pages_one" to "1 trang",
+    "st_plan_paper" to "Bước 1: Kế hoạch nghiên cứu",
+    "d_plan_paper" to "Đang lập {0} chương như một bài tiểu luận…",
+    "chapter_n" to "Chương {0}/{1}: {2}",
+    "len_missed" to "{0} trên khoảng {1} từ: các nguồn tìm được không có thêm dữ kiện đã kiểm chứng. Độ sâu lớn hơn hoặc câu hỏi rộng hơn sẽ tìm được nhiều hơn.",
+    "live_show" to "Xem trực tiếp",
+    "live_hide" to "Ẩn chế độ xem trực tiếp"
 )

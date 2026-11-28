@@ -74,6 +74,14 @@ internal val JA: Map<String, String> = mapOf(
     "eng_bing" to "大規模なインデックス、PDF や公的ページが多い",
     "eng_startpage" to "トラッキングなしの Google 検索結果",
     "eng_mojeek" to "独自インデックス、VPN アドレスでは Captcha が出やすい",
+    "eng_seznam" to "独自インデックスを持つチェコの検索エンジン、多言語で良い結果",
+    "eng_naver" to "韓国の検索エンジン、他言語のページも見つかる",
+    "eng_mwmbl" to "コミュニティによる公開インデックス、英語の質問のみ",
+    "captcha_hint" to "{0} が人による検索かどうか確認しようとしています。検索は他の検索エンジンで続きます。",
+    "captcha_solve" to "自分で解く",
+    "captcha_title" to "{0} の確認",
+    "captcha_info" to "ページ上のテストを解いてください。その後アプリは再び {0} で検索します。",
+    "captcha_done" to "完了",
     "eng_marginalia" to "小規模でテキスト中心のウェブ、公開 API キー",
     "eng_searxng_name" to "自分の SearXNG インスタンス",
     "eng_searxng" to "インスタンスで JSON 出力を有効にする必要があります",
@@ -236,5 +244,11 @@ internal val JA: Map<String, String> = mapOf(
     "len_custom" to "カスタム",
     "len_words" to "{0} 語",
     "len_hint" to "約 {0} 語。長い回答ほど多くの情報源を調べ、時間がかかります。",
-    "pages_one" to "1 ページ"
+    "pages_one" to "1 ページ",
+    "st_plan_paper" to "ステージ1：調査計画",
+    "d_plan_paper" to "レポートのように {0} 章を計画中…",
+    "chapter_n" to "第 {0}/{1} 章：{2}",
+    "len_missed" to "約 {1} 語中 {0} 語：見つかった情報源には、確認済みの事実がこれ以上ありませんでした。深さを上げるか、より広い質問にすると増えます。",
+    "live_show" to "ライブで見る",
+    "live_hide" to "ライブ表示を隠す"
 )

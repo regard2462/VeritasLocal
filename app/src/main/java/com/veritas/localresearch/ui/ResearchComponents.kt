@@ -15,7 +15,17 @@ import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Public
+import androidx.compose.material.icons.filled.Search
+import com.veritas.localresearch.domain.LiveEvent
+import com.veritas.localresearch.domain.LiveKind
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,7 +52,11 @@ private val CITATION_TAG_REGEX = Regex("\\[(\\d+)\\]")
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun PipelineProgressCard(progress: PipelineProgress) {
+fun PipelineProgressCard(
+    progress: PipelineProgress,
+    liveFlow: kotlinx.coroutines.flow.StateFlow<List<LiveEvent>>? = null
+) {
+    var showLive by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
     ElevatedCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp)
@@ -76,6 +90,51 @@ fun PipelineProgressCard(progress: PipelineProgress) {
                         label = { Text(tr("checked_rejected", progress.verifiedClaimsCount, progress.rejectedClaimsCount)) }
                     )
                 }
+            }
+            if (liveFlow != null) {
+                TextButton(onClick = { showLive = !showLive }, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                    Text(if (showLive) tr("live_hide") else tr("live_show"))
+                }
+                // Nur aufgeklappt wird die Liste gelesen und gezeichnet
+                if (showLive) LiveList(liveFlow)
+            }
+        }
+    }
+}
+
+/** Live-Liste: neueste Eintraege oben, Seiten und Fakten oeffnen per Tippen die Quelle. */
+@Composable
+private fun LiveList(liveFlow: kotlinx.coroutines.flow.StateFlow<List<LiveEvent>>) {
+    val events by liveFlow.collectAsState()
+    val uriHandler = LocalUriHandler.current
+    androidx.compose.foundation.lazy.LazyColumn(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(max = 260.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+            .padding(8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        items(events.size) { i ->
+            val e = events[events.size - 1 - i]
+            val (icon, tint) = when (e.kind) {
+                LiveKind.SEARCH -> Icons.Default.Search to MaterialTheme.colorScheme.primary
+                LiveKind.OPEN -> Icons.Default.Public to MaterialTheme.colorScheme.primary
+                LiveKind.LINK -> Icons.Default.Link to MaterialTheme.colorScheme.primary
+                LiveKind.FAIL -> Icons.Default.ErrorOutline to MaterialTheme.colorScheme.onSurfaceVariant
+                LiveKind.FACT -> Icons.Default.CheckCircle to VerifiedGreen
+                LiveKind.REJECT -> Icons.Default.Close to MaterialTheme.colorScheme.error
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .then(if (e.url.isNotBlank()) Modifier.clickable { runCatching { uriHandler.openUri(e.url) } } else Modifier),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.Top
+            ) {
+                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp).padding(top = 2.dp))
+                Text(e.text, style = MaterialTheme.typography.bodySmall)
             }
         }
     }
@@ -170,6 +229,17 @@ fun VerifiedAnswerCard(
                     text = tr("status_bar", report.verifiedClaims.size, multiSourceCount, report.rejectedClaimCount, report.unverifiedNumbers.size),
                     style = MaterialTheme.typography.labelMedium
                 )
+            }
+            // Selbst festgelegte Wortzahl deutlich verfehlt: sagen, woran es lag
+            if (report.wordTarget > 0) {
+                val words = report.synthesizedAnswer.split(' ', '\n').count { w -> w.any { it.isLetterOrDigit() } }
+                if (words < report.wordTarget * 8 / 10) {
+                    Text(
+                        text = tr("len_missed", words, report.wordTarget),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
 
             // Antwort markier- und kopierbar; Zitate und gelbe Zahlen bleiben antippbar
@@ -361,3 +431,24 @@ fun pageLabel(c: com.veritas.localresearch.domain.TextChunk): String? = when {
     else -> tr("page", c.page)
 }
 
+
+/** Hinweis: eine oder mehrere Suchmaschinen wollen einen Menschen sehen; Antippen oeffnet den Test. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun CaptchaHint(engines: List<com.veritas.localresearch.scraping.SearchEngine>, onSolve: (com.veritas.localresearch.scraping.SearchEngine) -> Unit) {
+    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text(
+                tr("captcha_hint", engines.joinToString(", ") { it.displayName }),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                engines.forEach { e ->
+                    TextButton(onClick = { onSolve(e) }, contentPadding = PaddingValues(horizontal = 4.dp)) {
+                        Text(if (engines.size == 1) tr("captcha_solve") else "${tr("captcha_solve")}: ${e.displayName}")
+                    }
+                }
+            }
+        }
+    }
+}

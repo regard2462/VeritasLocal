@@ -74,6 +74,14 @@ internal val HE: Map<String, String> = mapOf(
     "eng_bing" to "אינדקס גדול, הרבה קובצי PDF ודפים רשמיים",
     "eng_startpage" to "תוצאות Google בלי מעקב",
     "eng_mojeek" to "אינדקס עצמאי, מציג לעיתים קרובות Captcha לכתובות VPN",
+    "eng_seznam" to "מנוע צ'כי עם אינדקס משלו, תוצאות טובות בשפות רבות",
+    "eng_naver" to "מנוע קוריאני, מוצא גם דפים בשפות אחרות",
+    "eng_mwmbl" to "אינדקס פתוח שנבנה בידי הקהילה, לשאלות באנגלית בלבד",
+    "captcha_hint" to "{0} רוצה לוודא שאדם מחפש. החיפוש ממשיך במנועים האחרים.",
+    "captcha_solve" to "לפתור בעצמי",
+    "captcha_title" to "בדיקה ב-{0}",
+    "captcha_info" to "פתרו את הבדיקה בדף. אחר כך האפליקציה תחפש שוב ב-{0}.",
+    "captcha_done" to "סיום",
     "eng_marginalia" to "רשת קטנה ועשירה בטקסט, מפתח API ציבורי",
     "eng_searxng_name" to "מופע SearXNG עצמי",
     "eng_searxng" to "יש להפעיל פלט JSON במופע",
@@ -236,5 +244,11 @@ internal val HE: Map<String, String> = mapOf(
     "len_custom" to "מותאם",
     "len_words" to "{0} מילים",
     "len_hint" to "כ־{0} מילים. תשובות ארוכות יותר סורקות יותר מקורות ונמשכות זמן רב יותר.",
-    "pages_one" to "עמוד אחד"
+    "pages_one" to "עמוד אחד",
+    "st_plan_paper" to "שלב 1: תוכנית מחקר",
+    "d_plan_paper" to "מתכנן {0} פרקים כמו בעבודה סמינריונית…",
+    "chapter_n" to "פרק {0}/{1}: {2}",
+    "len_missed" to "{0} מתוך כ־{1} מילים: המקורות שנמצאו לא הכילו עובדות בדוקות נוספות. עומק רב יותר או שאלה רחבה יותר ימצאו יותר.",
+    "live_show" to "צפייה בזמן אמת",
+    "live_hide" to "הסתרת התצוגה החיה"
 )

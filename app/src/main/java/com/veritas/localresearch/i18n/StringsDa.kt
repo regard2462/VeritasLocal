@@ -74,6 +74,14 @@ internal val DA: Map<String, String> = mapOf(
     "eng_bing" to "Stort indeks, mange PDF-filer og myndighedssider",
     "eng_startpage" to "Google-resultater uden sporing",
     "eng_mojeek" to "Eget indeks, viser ofte captcha ved VPN-adresser",
+    "eng_seznam" to "Tjekkisk søgemaskine med eget indeks, gode resultater på mange sprog",
+    "eng_naver" to "Koreansk søgemaskine, finder også sider på andre sprog",
+    "eng_mwmbl" to "Åbent indeks bygget af fællesskabet, kun engelske spørgsmål",
+    "captcha_hint" to "{0} vil kontrollere, at det er et menneske, der søger. Søgningen fortsætter med de andre søgemaskiner.",
+    "captcha_solve" to "Løs selv",
+    "captcha_title" to "Kontrol hos {0}",
+    "captcha_info" to "Løs testen på siden. Derefter søger appen med {0} igen.",
+    "captcha_done" to "Færdig",
     "eng_marginalia" to "Lille, tekstrigt web, offentlig API-nøgle",
     "eng_searxng_name" to "Egen SearXNG-instans",
     "eng_searxng" to "JSON-output skal være aktiveret i instansen",
@@ -236,5 +244,11 @@ internal val DA: Map<String, String> = mapOf(
     "len_custom" to "Egen",
     "len_words" to "{0} ord",
     "len_hint" to "Cirka {0} ord. Længere svar søger i flere kilder og tager længere tid.",
-    "pages_one" to "1 side"
+    "pages_one" to "1 side",
+    "st_plan_paper" to "Trin 1: researchplan",
+    "d_plan_paper" to "Planlægger {0} kapitler som i en opgave…",
+    "chapter_n" to "Kapitel {0}/{1}: {2}",
+    "len_missed" to "{0} af omkring {1} ord: de fundne kilder indeholdt ikke flere kontrollerede fakta. Mere dybde eller et bredere spørgsmål finder mere.",
+    "live_show" to "Følg live",
+    "live_hide" to "Skjul livevisning"
 )

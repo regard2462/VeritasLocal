@@ -75,10 +75,12 @@ class RobotsTxtChecker(baseClient: OkHttpClient? = null) {
                     }
 
                     override fun onResponse(call: Call, response: Response) {
-                        val result = response.use { resp ->
-                            if (!resp.isSuccessful) emptyList()
-                            else parseRules(resp.body?.string().orEmpty())
-                        }
+                        val result = runCatching {
+                            response.use { resp ->
+                                if (!resp.isSuccessful) emptyList()
+                                else parseRules(resp.body?.string().orEmpty())
+                            }
+                        }.getOrNull()
                         if (cont.isActive) cont.resume(result)
                     }
                 })

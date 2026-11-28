@@ -96,6 +96,9 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
     )
     val uiState: StateFlow<ResearchUiState> = _uiState.asStateFlow()
 
+    /** Live-Liste der laufenden Recherche (Suchen, geoeffnete Seiten, Fakten). */
+    val live: StateFlow<List<com.veritas.localresearch.domain.LiveEvent>> = researchEngine.live
+
     private var activeResearchJob: Job? = null
     /** Laufender Import oder Ueberblick, damit Stopp (auch aus der Benachrichtigung) ihn abbrechen kann. */
     private var importJob: Job? = null
@@ -155,6 +158,17 @@ class ResearchViewModel(app: Application) : AndroidViewModel(app) {
 
     fun engineCooldownUntil(engine: SearchEngine): Long = webScraper.engineCooldownUntil(engine)
     fun clearEngineCooldown(engine: SearchEngine) = webScraper.clearEngineCooldown(engine)
+
+    // Captcha selbst loesen (nur mit eingebautem Browser)
+    val challengedEngines: StateFlow<Set<SearchEngine>> = webScraper.challenged
+    val canSolveCaptcha: Boolean get() = webScraper.canSolveCaptcha
+    val browserUserAgent: String get() = webScraper.browserUserAgent
+    fun captchaUrl(engine: SearchEngine): String = webScraper.captchaUrl(engine)
+    fun captchaSolved(engine: SearchEngine) = webScraper.captchaSolved(engine)
+    private val _captchaFor = MutableStateFlow<SearchEngine?>(null)
+    /** Suchmaschine, deren Test gerade im sichtbaren Browserfenster offen ist. */
+    val captchaFor: StateFlow<SearchEngine?> = _captchaFor
+    fun openCaptcha(engine: SearchEngine?) { _captchaFor.value = engine }
 
     fun toggleModelManager(show: Boolean) {
         _uiState.update {

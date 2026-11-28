@@ -134,9 +134,9 @@ class DirectFactApis(baseClient: OkHttpClient? = null) {
                 }
 
                 override fun onResponse(call: Call, response: Response) {
-                    val body = response.use { resp ->
-                        if (resp.isSuccessful) resp.body?.string() else null
-                    }
+                    val body = runCatching {
+                        response.use { resp -> if (resp.isSuccessful) resp.body?.string() else null }
+                    }.getOrNull()
                     if (cont.isActive) cont.resume(body)
                 }
             })

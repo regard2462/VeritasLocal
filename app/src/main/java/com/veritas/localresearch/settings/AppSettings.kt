@@ -58,6 +58,11 @@ class SettingsStore(context: Context) {
     val state: StateFlow<AppSettings> = _state.asStateFlow()
     val current: AppSettings get() = _state.value
 
+    private companion object {
+        /** Suchmaschinen bis 1.5.0; gespeicherte Einstellungen ohne "engines_known" kennen nur diese. */
+        val LEGACY_ENGINES = setOf("ddg", "bing", "startpage", "mojeek", "marginalia", "searxng")
+    }
+
     init {
         I18n.setPreference(_state.value.uiLanguage)
     }
@@ -65,7 +70,11 @@ class SettingsStore(context: Context) {
     private fun load(): AppSettings {
         val d = AppSettings()
         return AppSettings(
-            enabledEngines = prefs.getStringSet("engines", null)?.toSet() ?: d.enabledEngines,
+            enabledEngines = prefs.getStringSet("engines", null)?.toSet()?.let { saved ->
+                // Suchmaschinen, die nach dem letzten Speichern dazukamen, mit ihrer Voreinstellung aufnehmen
+                val known = prefs.getStringSet("engines_known", null) ?: LEGACY_ENGINES
+                saved + SearchEngine.entries.filter { it.enabledByDefault && it.id !in known }.map { it.id }
+            } ?: d.enabledEngines,
             searxngUrl = prefs.getString("searxng", d.searxngUrl).orEmpty(),
             useWikipedia = prefs.getBoolean("wikipedia", d.useWikipedia),
             useArxiv = prefs.getBoolean("arxiv", d.useArxiv),
@@ -88,6 +97,7 @@ class SettingsStore(context: Context) {
         I18n.setPreference(next.uiLanguage)
         prefs.edit()
             .putStringSet("engines", next.enabledEngines)
+            .putStringSet("engines_known", SearchEngine.entries.map { it.id }.toSet())
             .putString("searxng", next.searxngUrl)
             .putBoolean("wikipedia", next.useWikipedia)
             .putBoolean("arxiv", next.useArxiv)

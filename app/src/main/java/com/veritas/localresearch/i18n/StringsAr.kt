@@ -74,6 +74,14 @@ internal val AR: Map<String, String> = mapOf(
     "eng_bing" to "فهرس كبير، كثير من ملفات PDF والصفحات الرسمية",
     "eng_startpage" to "نتائج Google بدون تتبع",
     "eng_mojeek" to "فهرس خاص، يعرض Captcha كثيرًا لعناوين VPN",
+    "eng_seznam" to "محرك تشيكي بفهرس خاص، نتائج جيدة بلغات كثيرة",
+    "eng_naver" to "محرك كوري، يجد أيضًا صفحات بلغات أخرى",
+    "eng_mwmbl" to "فهرس مفتوح يبنيه المجتمع، للأسئلة الإنجليزية فقط",
+    "captcha_hint" to "يريد {0} التحقق من أن إنسانًا يبحث. يستمر البحث بمحركات البحث الأخرى.",
+    "captcha_solve" to "حلّه بنفسك",
+    "captcha_title" to "التحقق لدى {0}",
+    "captcha_info" to "حلّ الاختبار في الصفحة. بعدها يبحث التطبيق من جديد عبر {0}.",
+    "captcha_done" to "تم",
     "eng_marginalia" to "ويب صغير غني بالنصوص، مفتاح API عام",
     "eng_searxng_name" to "خادم SearXNG الخاص",
     "eng_searxng" to "يجب تفعيل خرج JSON في الخادم",
@@ -236,5 +244,11 @@ internal val AR: Map<String, String> = mapOf(
     "len_custom" to "مخصص",
     "len_words" to "الكلمات: {0}",
     "len_hint" to "نحو {0} كلمة. الإجابات الأطول تبحث في مصادر أكثر وتستغرق وقتًا أطول.",
-    "pages_one" to "صفحة واحدة"
+    "pages_one" to "صفحة واحدة",
+    "st_plan_paper" to "المرحلة 1: خطة البحث",
+    "d_plan_paper" to "تخطيط {0} فصول كما في بحث دراسي…",
+    "chapter_n" to "الفصل {0}/{1}: {2}",
+    "len_missed" to "{0} من نحو {1} كلمة: لم تتضمن المصادر التي عُثر عليها حقائق مُتحقَّقًا منها أكثر. عمق أكبر أو سؤال أوسع يجد المزيد.",
+    "live_show" to "المتابعة المباشرة",
+    "live_hide" to "إخفاء العرض المباشر"
 )

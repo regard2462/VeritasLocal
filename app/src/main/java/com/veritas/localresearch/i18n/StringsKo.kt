@@ -74,6 +74,14 @@ internal val KO: Map<String, String> = mapOf(
     "eng_bing" to "대규모 색인, PDF와 공공 페이지가 많음",
     "eng_startpage" to "추적 없는 Google 검색 결과",
     "eng_mojeek" to "자체 색인, VPN 주소에서는 Captcha가 자주 뜸",
+    "eng_seznam" to "자체 색인을 갖춘 체코 검색 엔진, 여러 언어에서 결과가 좋음",
+    "eng_naver" to "한국 검색 엔진, 다른 언어 페이지도 찾음",
+    "eng_mwmbl" to "커뮤니티가 만든 공개 색인, 영어 질문 전용",
+    "captcha_hint" to "{0}에서 사람이 검색하는지 확인하려고 합니다. 검색은 다른 검색 엔진으로 계속됩니다.",
+    "captcha_solve" to "직접 풀기",
+    "captcha_title" to "{0} 확인",
+    "captcha_info" to "페이지에서 테스트를 푸세요. 그러면 앱이 다시 {0}(으)로 검색합니다.",
+    "captcha_done" to "완료",
     "eng_marginalia" to "작고 텍스트 중심인 웹, 공개 API 키",
     "eng_searxng_name" to "내 SearXNG 인스턴스",
     "eng_searxng" to "인스턴스에서 JSON 출력을 켜야 합니다",
@@ -236,5 +244,11 @@ internal val KO: Map<String, String> = mapOf(
     "len_custom" to "직접 설정",
     "len_words" to "{0}단어",
     "len_hint" to "약 {0}단어. 답변이 길수록 더 많은 출처를 검색하고 시간이 더 걸립니다.",
-    "pages_one" to "1쪽"
+    "pages_one" to "1쪽",
+    "st_plan_paper" to "1단계: 조사 계획",
+    "d_plan_paper" to "보고서처럼 {0}개 장을 계획하는 중…",
+    "chapter_n" to "{0}/{1}장: {2}",
+    "len_missed" to "약 {1}단어 중 {0}단어: 찾은 출처에 확인된 사실이 더 없었습니다. 깊이를 높이거나 더 넓은 질문을 하면 더 찾을 수 있습니다.",
+    "live_show" to "실시간으로 보기",
+    "live_hide" to "실시간 보기 숨기기"
 )

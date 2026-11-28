@@ -196,7 +196,13 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
 
             // Live-Fortschritt der 5-Stufen-Pipeline
             if (state.progress.isRunning || state.report != null) {
-                PipelineProgressCard(progress = state.progress)
+                PipelineProgressCard(progress = state.progress, liveFlow = viewModel.live)
+            }
+
+            // Suchmaschinen, die einen Menschen sehen wollen: der Nutzer kann den Test selbst loesen
+            val challenged = viewModel.challengedEngines.collectAsState().value
+            if (viewModel.canSolveCaptcha && challenged.isNotEmpty()) {
+                CaptchaHint(challenged.sortedBy { it.ordinal }) { viewModel.openCaptcha(it) }
             }
 
             // Streaming-Entwurf waehrend Stufe 4b (Synthese)
@@ -281,6 +287,16 @@ fun ResearchScreen(viewModel: ResearchViewModel) {
 
     if (state.showSettings) {
         SettingsSheet(viewModel = viewModel, onDismiss = { viewModel.toggleSettings(false) })
+    }
+
+    viewModel.captchaFor.collectAsState().value?.let { engine ->
+        CaptchaDialog(
+            engineName = engine.displayName,
+            url = viewModel.captchaUrl(engine),
+            userAgent = viewModel.browserUserAgent,
+            onSolved = { viewModel.captchaSolved(engine); viewModel.openCaptcha(null) },
+            onDismiss = { viewModel.openCaptcha(null) }
+        )
     }
 
     // Model-Manager Sheet

@@ -74,6 +74,14 @@ internal val DE: Map<String, String> = mapOf(
     "eng_bing" to "Großer Index, viele PDFs und offizielle Seiten",
     "eng_startpage" to "Google-Ergebnisse ohne Tracking",
     "eng_mojeek" to "Eigener Index, zeigt bei VPN-Adressen oft ein Captcha",
+    "eng_seznam" to "Tschechische Suchmaschine mit eigenem Index, gute Treffer in vielen Sprachen",
+    "eng_naver" to "Koreanische Suchmaschine, findet auch Seiten in anderen Sprachen",
+    "eng_mwmbl" to "Offener Index aus der Community, nur für englische Fragen",
+    "captcha_hint" to "{0} möchte prüfen, ob ein Mensch sucht. Die Suche läuft mit den anderen Suchmaschinen weiter.",
+    "captcha_solve" to "Selbst lösen",
+    "captcha_title" to "Prüfung bei {0}",
+    "captcha_info" to "Löse den Test auf der Seite. Danach sucht die App wieder mit {0}.",
+    "captcha_done" to "Fertig",
     "eng_marginalia" to "Kleines, textlastiges Web, öffentlicher API-Schlüssel",
     "eng_searxng_name" to "Eigene SearXNG-Instanz",
     "eng_searxng" to "JSON-Ausgabe muss in der Instanz aktiv sein",
@@ -236,5 +244,11 @@ internal val DE: Map<String, String> = mapOf(
     "len_custom" to "Eigene",
     "len_words" to "{0} Wörter",
     "len_hint" to "Ziel etwa {0} Wörter. Längere Antworten durchsuchen mehr Quellen und dauern länger.",
-    "pages_one" to "1 Seite"
+    "pages_one" to "1 Seite",
+    "st_plan_paper" to "Stufe 1: Rechercheplan",
+    "d_plan_paper" to "Plane {0} Kapitel wie bei einer Hausarbeit…",
+    "chapter_n" to "Kapitel {0}/{1}: {2}",
+    "len_missed" to "{0} von etwa {1} Wörtern: Die gefundenen Quellen enthielten keine weiteren geprüften Fakten. Mehr Tiefe oder eine breitere Frage findet mehr.",
+    "live_show" to "Live zusehen",
+    "live_hide" to "Live-Ansicht ausblenden"
 )

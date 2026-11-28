@@ -31,7 +31,9 @@ data class ScrapedDocument(
     val title: String,
     val cleanText: String,
     val sourceType: SourceType,
-    val meta: SourceMeta = SourceMeta()
+    val meta: SourceMeta = SourceMeta(),
+    /** Links auf derselben Website (Adresse, Linktext), fuer das Weiterlesen bei langen Antworten. */
+    val links: List<Pair<String, String>> = emptyList()
 )
 
 data class TextChunk(
@@ -131,9 +133,16 @@ data class ResearchReport(
     val modelName: String = "",
     /** Zeichenbereiche der Zwischenueberschriften in [synthesizedAnswer] (ohne Rauten im Text). */
     val headingRanges: List<IntRange> = emptyList(),
+    /** Selbst festgelegte Wortzahl (0 = eine der drei Stufen). */
+    val wordTarget: Int = 0,
     /** Zeitpunkt der Recherche, zugleich Abrufdatum der Quellen. */
     val createdAt: Long = System.currentTimeMillis()
 )
+
+/** Was die Recherche gerade tut, fuer die Live-Liste: Suche, geoeffnete Seite, gefolgter Link, Fakt, Verworfenes. */
+enum class LiveKind { SEARCH, OPEN, LINK, FAIL, FACT, REJECT }
+
+data class LiveEvent(val kind: LiveKind, val text: String, val url: String = "")
 
 data class PipelineProgress(
     val currentRound: Int = 1,

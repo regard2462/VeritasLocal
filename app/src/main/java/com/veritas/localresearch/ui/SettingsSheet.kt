@@ -51,10 +51,18 @@ fun SettingsSheet(viewModel: ResearchViewModel, onDismiss: () -> Unit) {
                             Text("${engine.displayName} • ${engine.perMinute}/min", style = MaterialTheme.typography.bodyMedium)
                             Text(engine.note, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             if (coolMin >= 0 && coolUntil > System.currentTimeMillis()) {
-                                TextButton(
-                                    onClick = { viewModel.clearEngineCooldown(engine); refresh++ },
-                                    contentPadding = PaddingValues(0.dp)
-                                ) { Text(tr("paused", coolMin + 1)) }
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    TextButton(
+                                        onClick = { viewModel.clearEngineCooldown(engine); refresh++ },
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) { Text(tr("paused", coolMin + 1)) }
+                                    if (viewModel.canSolveCaptcha && engine.isHtml) {
+                                        TextButton(
+                                            onClick = { viewModel.openCaptcha(engine); onDismiss() },
+                                            contentPadding = PaddingValues(0.dp)
+                                        ) { Text(tr("captcha_solve")) }
+                                    }
+                                }
                             }
                         }
                         Switch(

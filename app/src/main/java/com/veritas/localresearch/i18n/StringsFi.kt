@@ -74,6 +74,14 @@ internal val FI: Map<String, String> = mapOf(
     "eng_bing" to "Laaja hakemisto, paljon PDF-tiedostoja ja viranomaissivuja",
     "eng_startpage" to "Googlen tulokset ilman seurantaa",
     "eng_mojeek" to "Oma hakemisto, näyttää VPN-osoitteille usein Captchan",
+    "eng_seznam" to "Tšekkiläinen hakukone omalla hakemistolla, hyviä tuloksia monilla kielillä",
+    "eng_naver" to "Korealainen hakukone, löytää myös muunkielisiä sivuja",
+    "eng_mwmbl" to "Yhteisön avoin hakemisto, vain englanninkieliset kysymykset",
+    "captcha_hint" to "{0} haluaa varmistaa, että hakija on ihminen. Haku jatkuu muilla hakukoneilla.",
+    "captcha_solve" to "Ratkaise itse",
+    "captcha_title" to "Tarkistus: {0}",
+    "captcha_info" to "Ratkaise testi sivulla. Sen jälkeen sovellus hakee taas palvelulla {0}.",
+    "captcha_done" to "Valmis",
     "eng_marginalia" to "Pieni, tekstipainotteinen verkko, julkinen API-avain",
     "eng_searxng_name" to "Oma SearXNG-palvelin",
     "eng_searxng" to "JSON-tulosteen täytyy olla sallittu palvelimella",
@@ -236,5 +244,11 @@ internal val FI: Map<String, String> = mapOf(
     "len_custom" to "Oma",
     "len_words" to "{0} sanaa",
     "len_hint" to "Noin {0} sanaa. Pidemmät vastaukset hakevat useammista lähteistä ja kestävät kauemmin.",
-    "pages_one" to "1 sivu"
+    "pages_one" to "1 sivu",
+    "st_plan_paper" to "Vaihe 1: tutkimussuunnitelma",
+    "d_plan_paper" to "Suunnitellaan {0} lukua kuin harjoitustyössä…",
+    "chapter_n" to "Luku {0}/{1}: {2}",
+    "len_missed" to "{0}/{1} sanaa: löydetyt lähteet eivät sisältäneet enempää tarkistettuja faktoja. Syvempi haku tai laajempi kysymys löytää enemmän.",
+    "live_show" to "Seuraa livenä",
+    "live_hide" to "Piilota livenäkymä"
 )

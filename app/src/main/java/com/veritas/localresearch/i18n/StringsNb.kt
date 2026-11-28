@@ -74,6 +74,14 @@ internal val NB: Map<String, String> = mapOf(
     "eng_bing" to "Stor indeks, mange PDF-er og offentlige sider",
     "eng_startpage" to "Google-resultater uten sporing",
     "eng_mojeek" to "Egen indeks, viser ofte captcha for VPN-adresser",
+    "eng_seznam" to "Tsjekkisk søkemotor med egen indeks, gode treff på mange språk",
+    "eng_naver" to "Koreansk søkemotor, finner også sider på andre språk",
+    "eng_mwmbl" to "Åpen indeks bygget av fellesskapet, bare engelske spørsmål",
+    "captcha_hint" to "{0} vil sjekke at det er et menneske som søker. Søket fortsetter med de andre søkemotorene.",
+    "captcha_solve" to "Løs selv",
+    "captcha_title" to "Sjekk hos {0}",
+    "captcha_info" to "Løs testen på siden. Deretter søker appen med {0} igjen.",
+    "captcha_done" to "Ferdig",
     "eng_marginalia" to "Lite, tekstrikt nett, offentlig API-nøkkel",
     "eng_searxng_name" to "Egen SearXNG-instans",
     "eng_searxng" to "JSON-utdata må være aktivert i instansen",
@@ -236,5 +244,11 @@ internal val NB: Map<String, String> = mapOf(
     "len_custom" to "Egen",
     "len_words" to "{0} ord",
     "len_hint" to "Omtrent {0} ord. Lengre svar søker i flere kilder og tar lengre tid.",
-    "pages_one" to "1 side"
+    "pages_one" to "1 side",
+    "st_plan_paper" to "Trinn 1: researchplan",
+    "d_plan_paper" to "Planlegger {0} kapitler som i en oppgave…",
+    "chapter_n" to "Kapittel {0}/{1}: {2}",
+    "len_missed" to "{0} av omtrent {1} ord: kildene som ble funnet, inneholdt ikke flere kontrollerte fakta. Mer dybde eller et bredere spørsmål finner mer.",
+    "live_show" to "Følg direkte",
+    "live_hide" to "Skjul direktevisning"
 )

@@ -74,6 +74,14 @@ internal val ID: Map<String, String> = mapOf(
     "eng_bing" to "Indeks besar, banyak PDF dan halaman resmi",
     "eng_startpage" to "Hasil Google tanpa pelacakan",
     "eng_mojeek" to "Indeks sendiri, sering menampilkan Captcha untuk alamat VPN",
+    "eng_seznam" to "Mesin pencari Ceko dengan indeks sendiri, hasil bagus dalam banyak bahasa",
+    "eng_naver" to "Mesin pencari Korea, juga menemukan halaman dalam bahasa lain",
+    "eng_mwmbl" to "Indeks terbuka buatan komunitas, hanya untuk pertanyaan bahasa Inggris",
+    "captcha_hint" to "{0} ingin memastikan bahwa yang mencari adalah manusia. Pencarian berlanjut dengan mesin pencari lain.",
+    "captcha_solve" to "Selesaikan sendiri",
+    "captcha_title" to "Pemeriksaan di {0}",
+    "captcha_info" to "Selesaikan tes di halaman. Setelah itu aplikasi mencari lagi dengan {0}.",
+    "captcha_done" to "Selesai",
     "eng_marginalia" to "Web kecil yang banyak teks, kunci API publik",
     "eng_searxng_name" to "Instans SearXNG sendiri",
     "eng_searxng" to "Output JSON harus diaktifkan di instans",
@@ -236,5 +244,11 @@ internal val ID: Map<String, String> = mapOf(
     "len_custom" to "Kustom",
     "len_words" to "{0} kata",
     "len_hint" to "Sekitar {0} kata. Jawaban yang lebih panjang mencari lebih banyak sumber dan butuh waktu lebih lama.",
-    "pages_one" to "1 halaman"
+    "pages_one" to "1 halaman",
+    "st_plan_paper" to "Tahap 1: Rencana riset",
+    "d_plan_paper" to "Merencanakan {0} bab seperti makalah…",
+    "chapter_n" to "Bab {0}/{1}: {2}",
+    "len_missed" to "{0} dari sekitar {1} kata: sumber yang ditemukan tidak memuat fakta terperiksa lain. Kedalaman lebih atau pertanyaan yang lebih luas menemukan lebih banyak.",
+    "live_show" to "Lihat langsung",
+    "live_hide" to "Sembunyikan tampilan langsung"
 )

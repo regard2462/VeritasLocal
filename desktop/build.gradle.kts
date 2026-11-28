@@ -8,7 +8,7 @@ plugins {
 }
 
 // Muss zu versionName in app/build.gradle.kts passen
-val vlVersion = "1.5.0"
+val vlVersion = "1.6.0"
 
 // Gemeinsamer Code liegt im Android-Modul. Was nur auf Android laeuft, bleibt draussen; die Gegenstuecke liegen in
 // src/main/kotlin (schmale Ersatzklassen fuer android.*, Fenster, Dateidialog).
@@ -19,6 +19,7 @@ val androidOnly = listOf(
     "com/veritas/localresearch/ResearchService.kt",
     "com/veritas/localresearch/docs/AndroidOcr.kt",
     "com/veritas/localresearch/scraping/WebViewPageRenderer.kt",
+    "com/veritas/localresearch/ui/CaptchaDialog.kt",
     "com/veritas/localresearch/export/PdfWriter.kt",
     "com/veritas/localresearch/scraping/PdfTextExtractor.kt",
 )

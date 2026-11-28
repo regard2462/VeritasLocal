@@ -1,5 +1,6 @@
 package com.veritas.localresearch.docs
 
+import com.veritas.localresearch.domain.ScrapedDocument
 import com.veritas.localresearch.domain.SourceType
 import com.veritas.localresearch.domain.TextChunk
 import com.veritas.localresearch.pipeline.DeepResearchEngine
@@ -231,5 +232,20 @@ class DocumentParserTest {
         assertTrue(DeepResearchEngine.isOverviewQuestion("What is this paper about?"))
         assertTrue(DeepResearchEngine.isOverviewQuestion("Was sind die Kernaussagen?"))
         assertFalse(DeepResearchEngine.isOverviewQuestion("Wie viel Strom speichert ein Solarspeicher?"))
+    }
+
+    @Test
+    fun siteBoilerplateIsNoFact() {
+        assertTrue(DeepResearchEngine.isBoilerplate("Your use of Example Wiki is subject to our terms of service, available here."))
+        assertTrue(DeepResearchEngine.isBoilerplate("Example Wiki is a publicly accessible and editable website for gathering information."))
+        assertTrue(DeepResearchEngine.isBoilerplate("Diese Seite enthält Hinweise zum Datenschutz."))
+        assertTrue(DeepResearchEngine.isBoilerplate("The service is provided as is, without any warranty of any kind."))
+        assertTrue(DeepResearchEngine.isBoilerplate("Articles on this site have not necessarily been reviewed by the publisher."))
+        assertTrue(DeepResearchEngine.isBoilerplate("Report problems directly to the site moderators."))
+        assertTrue(DeepResearchEngine.isBoilerplate("Users may buy virtual items for real money."))
+        assertTrue(DeepResearchEngine.isLegalPage(ScrapedDocument(url = "https://example.org/terms-of-use", title = "Terms", cleanText = "x", domain = "example.org", sourceType = SourceType.WEB)))
+        assertFalse(DeepResearchEngine.isLegalPage(ScrapedDocument(url = "https://example.org/guide/heat-pumps", title = "Heat pumps", cleanText = "x", domain = "example.org", sourceType = SourceType.WEB)))
+        assertFalse(DeepResearchEngine.isBoilerplate("A home battery of about 8 kilowatt hours fits a household that uses 4,000 kilowatt hours per year."))
+        assertFalse(DeepResearchEngine.isBoilerplate("Wärmepumpen erreichen bei -20 Grad noch 40 bis 55 Prozent ihrer Nennleistung."))
     }
 }

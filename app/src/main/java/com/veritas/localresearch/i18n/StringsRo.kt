@@ -74,6 +74,14 @@ internal val RO: Map<String, String> = mapOf(
     "eng_bing" to "Index mare, multe PDF-uri și pagini oficiale",
     "eng_startpage" to "Rezultate Google fără urmărire",
     "eng_mojeek" to "Index propriu, afișează adesea captcha pentru adrese VPN",
+    "eng_seznam" to "Motor ceh cu index propriu, rezultate bune în multe limbi",
+    "eng_naver" to "Motor coreean, găsește și pagini în alte limbi",
+    "eng_mwmbl" to "Index deschis creat de comunitate, doar întrebări în engleză",
+    "captcha_hint" to "{0} vrea să verifice că un om caută. Căutarea continuă cu celelalte motoare.",
+    "captcha_solve" to "Rezolvă singur",
+    "captcha_title" to "Verificare la {0}",
+    "captcha_info" to "Rezolvă testul de pe pagină. Apoi aplicația caută din nou cu {0}.",
+    "captcha_done" to "Gata",
     "eng_marginalia" to "Web mic, bogat în text, cheie API publică",
     "eng_searxng_name" to "Instanță SearXNG proprie",
     "eng_searxng" to "Ieșirea JSON trebuie activată în instanță",
@@ -236,5 +244,11 @@ internal val RO: Map<String, String> = mapOf(
     "len_custom" to "Personalizată",
     "len_words" to "{0} de cuvinte",
     "len_hint" to "Aproximativ {0} de cuvinte. Răspunsurile mai lungi caută în mai multe surse și durează mai mult.",
-    "pages_one" to "1 pagină"
+    "pages_one" to "1 pagină",
+    "st_plan_paper" to "Etapa 1: plan de cercetare",
+    "d_plan_paper" to "Se planifică {0} capitole ca într-o lucrare de seminar…",
+    "chapter_n" to "Capitolul {0}/{1}: {2}",
+    "len_missed" to "{0} din aproximativ {1} cuvinte: sursele găsite nu conțineau alte fapte verificate. Mai multă profunzime sau o întrebare mai largă găsește mai mult.",
+    "live_show" to "Urmărește live",
+    "live_hide" to "Ascunde vizualizarea live"
 )

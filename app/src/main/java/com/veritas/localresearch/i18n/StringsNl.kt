@@ -74,6 +74,14 @@ internal val NL: Map<String, String> = mapOf(
     "eng_bing" to "Grote index, veel PDF's en overheidspagina's",
     "eng_startpage" to "Google-resultaten zonder tracking",
     "eng_mojeek" to "Eigen index, toont vaak een captcha bij VPN-adressen",
+    "eng_seznam" to "Tsjechische zoekmachine met eigen index, goede resultaten in veel talen",
+    "eng_naver" to "Koreaanse zoekmachine, vindt ook pagina's in andere talen",
+    "eng_mwmbl" to "Open index van de community, alleen Engelse vragen",
+    "captcha_hint" to "{0} wil controleren of er een mens zoekt. Het zoeken gaat door met de andere zoekmachines.",
+    "captcha_solve" to "Zelf oplossen",
+    "captcha_title" to "Controle bij {0}",
+    "captcha_info" to "Los de test op de pagina op. Daarna zoekt de app weer met {0}.",
+    "captcha_done" to "Klaar",
     "eng_marginalia" to "Klein, tekstrijk web, openbare API-sleutel",
     "eng_searxng_name" to "Eigen SearXNG-instantie",
     "eng_searxng" to "JSON-uitvoer moet in de instantie zijn ingeschakeld",
@@ -236,5 +244,11 @@ internal val NL: Map<String, String> = mapOf(
     "len_custom" to "Aangepast",
     "len_words" to "{0} woorden",
     "len_hint" to "Ongeveer {0} woorden. Langere antwoorden doorzoeken meer bronnen en duren langer.",
-    "pages_one" to "1 pagina"
+    "pages_one" to "1 pagina",
+    "st_plan_paper" to "Fase 1: onderzoeksplan",
+    "d_plan_paper" to "{0} hoofdstukken plannen zoals bij een werkstuk…",
+    "chapter_n" to "Hoofdstuk {0}/{1}: {2}",
+    "len_missed" to "{0} van ongeveer {1} woorden: de gevonden bronnen bevatten geen verdere gecontroleerde feiten. Meer diepgang of een bredere vraag vindt meer.",
+    "live_show" to "Live meekijken",
+    "live_hide" to "Liveweergave verbergen"
 )

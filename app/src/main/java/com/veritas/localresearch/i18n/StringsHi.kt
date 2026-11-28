@@ -74,6 +74,14 @@ internal val HI: Map<String, String> = mapOf(
     "eng_bing" to "बड़ा इंडेक्स, बहुत सारी PDF और सरकारी पेज",
     "eng_startpage" to "बिना ट्रैकिंग के Google परिणाम",
     "eng_mojeek" to "अपना इंडेक्स, VPN पतों के लिए अक्सर Captcha दिखाता है",
+    "eng_seznam" to "अपने इंडेक्स वाला चेक सर्च इंजन, कई भाषाओं में अच्छे नतीजे",
+    "eng_naver" to "कोरियाई सर्च इंजन, दूसरी भाषाओं के पेज भी ढूँढता है",
+    "eng_mwmbl" to "समुदाय का खुला इंडेक्स, सिर्फ़ अंग्रेज़ी सवालों के लिए",
+    "captcha_hint" to "{0} जाँचना चाहता है कि खोज कोई इंसान कर रहा है। खोज बाकी सर्च इंजनों से जारी है।",
+    "captcha_solve" to "खुद हल करें",
+    "captcha_title" to "{0} पर जाँच",
+    "captcha_info" to "पेज पर टेस्ट हल करें। फिर ऐप दोबारा {0} से खोजेगा।",
+    "captcha_done" to "हो गया",
     "eng_marginalia" to "छोटा, टेक्स्ट-प्रधान वेब, सार्वजनिक API कुंजी",
     "eng_searxng_name" to "अपना SearXNG इंस्टेंस",
     "eng_searxng" to "इंस्टेंस में JSON आउटपुट चालू होना चाहिए",
@@ -236,5 +244,11 @@ internal val HI: Map<String, String> = mapOf(
     "len_custom" to "कस्टम",
     "len_words" to "{0} शब्द",
     "len_hint" to "लगभग {0} शब्द। लंबे उत्तर ज़्यादा स्रोत खोजते हैं और ज़्यादा समय लेते हैं।",
-    "pages_one" to "1 पृष्ठ"
+    "pages_one" to "1 पृष्ठ",
+    "st_plan_paper" to "चरण 1: शोध योजना",
+    "d_plan_paper" to "एक शोध-पत्र की तरह {0} अध्यायों की योजना…",
+    "chapter_n" to "अध्याय {0}/{1}: {2}",
+    "len_missed" to "लगभग {1} में से {0} शब्द: मिले स्रोतों में और जाँचे गए तथ्य नहीं थे। अधिक गहराई या व्यापक प्रश्न से और मिलेगा।",
+    "live_show" to "लाइव देखें",
+    "live_hide" to "लाइव दृश्य छिपाएँ"
 )

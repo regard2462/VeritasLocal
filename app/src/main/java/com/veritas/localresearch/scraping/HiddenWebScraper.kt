@@ -10,6 +10,9 @@ import com.veritas.localresearch.settings.SettingsStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -101,11 +104,24 @@ class HiddenWebScraper(
                 if (wait > 0L) continue
             }
             val url = engine.buildUrl(trimmed, cfg.searxngUrl, lang) ?: continue
-            val res = fetchRaw(url, if (engine == SearchEngine.MARGINALIA || engine == SearchEngine.SEARXNG) "application/json" else null)
-                ?: continue
+            val browser = jsRenderer.takeIf { engine.isHtml && governor.viaBrowser(engine) }
+            val res = if (browser != null) {
+                // Nach einem selbst geloesten Test: eingebauter Browser mit dessen Cookies; kommt nichts, ist wieder ein Test faellig
+                browser.loadAndEval(url, "document.documentElement.outerHTML", 12_000L)?.let { 200 to unwrapJsString(it) }
+                    ?: run { challenge(engine, url); null }
+            } else {
+                fetchRaw(url, if (engine == SearchEngine.MARGINALIA || engine == SearchEngine.SEARXNG) "application/json" else null)
+            } ?: continue
             val found = if (res.first in 200..299) runCatching { engine.parse(res.second, url, maxResults) }.getOrDefault(emptyList()) else emptyList()
-            if (found.isEmpty() && SearchEngine.isChallenge(res.first, res.second)) {
+            if (SearchEngine.looksDegraded(trimmed, found)) {
+                // Treffer passen nur zum ersten Wort: verwerfen und pausieren, ohne Hinweis (kein Test zum Loesen)
+                android.util.Log.i("VeritasSearch", "${engine.id} ${res.first} verwaessert")
                 governor.reportChallenge(engine)
+                continue
+            }
+            android.util.Log.i("VeritasSearch", "${engine.id} ${res.first} ${found.size}")
+            if (found.isEmpty() && SearchEngine.isChallenge(res.first, res.second)) {
+                challenge(engine, url)
                 continue
             }
             if (found.isNotEmpty()) {
@@ -118,7 +134,35 @@ class HiddenWebScraper(
     }
 
     fun engineCooldownUntil(engine: SearchEngine): Long = governor.cooldownUntil(engine)
-    fun clearEngineCooldown(engine: SearchEngine) = governor.clearCooldown(engine)
+    fun clearEngineCooldown(engine: SearchEngine) {
+        governor.clearCooldown(engine)
+        _challenged.update { it - engine }
+    }
+
+    // Suchmaschinen, die gerade einen Menschen sehen wollen, und die Seite, auf der sie es verlangt haben
+    private val _challenged = MutableStateFlow<Set<SearchEngine>>(emptySet())
+    val challenged: StateFlow<Set<SearchEngine>> = _challenged
+    private val challengeUrls = java.util.concurrent.ConcurrentHashMap<SearchEngine, String>()
+
+    private fun challenge(engine: SearchEngine, url: String) {
+        governor.reportChallenge(engine)
+        challengeUrls[engine] = url
+        if (engine.isHtml) _challenged.update { it + engine }
+    }
+
+    /** Nur mit eingebautem Browser (Android) kann der Nutzer einen Test selbst loesen. */
+    val canSolveCaptcha: Boolean get() = jsRenderer != null
+    val browserUserAgent: String get() = USER_AGENT
+
+    /** Seite fuer den Test: dort, wo er verlangt wurde, sonst eine einfache Suche. */
+    fun captchaUrl(engine: SearchEngine): String =
+        challengeUrls[engine] ?: engine.buildUrl("weather", settings.current.searxngUrl).orEmpty()
+
+    fun captchaSolved(engine: SearchEngine) {
+        governor.markSolved(engine)
+        challengeUrls.remove(engine)
+        _challenged.update { it - engine }
+    }
 
     /** Statuscode und Text (hoechstens 1,5 MB), oder null bei Netzwerkfehler. */
     private suspend fun fetchRaw(url: String, accept: String?): Pair<Int, String>? = withContext(Dispatchers.IO) {
@@ -161,7 +205,11 @@ class HiddenWebScraper(
         }
     }
 
-    suspend fun scrapePage(url: String, fallbackTitle: String): ScrapedDocument? {
+    /** Eine Seite lesen; nach [PAGE_TIMEOUT_MS] gilt sie als nicht ladbar, damit eine einzelne Seite keinen Lauf aufhaelt. */
+    suspend fun scrapePage(url: String, fallbackTitle: String): ScrapedDocument? =
+        withTimeoutOrNull(PAGE_TIMEOUT_MS) { scrapePageNow(url, fallbackTitle) }
+
+    private suspend fun scrapePageNow(url: String, fallbackTitle: String): ScrapedDocument? {
         val lowerPath = runCatching { Uri.parse(url).path?.lowercase().orEmpty() }.getOrDefault("")
         if (skipPageExtensions.any { lowerPath.endsWith(it) }) return null
         if (!robotsChecker.isAllowed(url)) return null
@@ -321,7 +369,8 @@ class HiddenWebScraper(
                     }
 
                     override fun onResponse(call: Call, response: Response) {
-                        val res = response.use { resp ->
+                        // Ein Abbruch beim Lesen darf die Koroutine nicht ohne Antwort zuruecklassen
+                        val res = runCatching { response.use { resp ->
                             val code = resp.code
                             if (code == 403 || code == 429 || code == 503) {
                                 // Sperre oder Drosselung durch die Seite respektieren, kein Umweg ueber die WebView
@@ -348,7 +397,7 @@ class HiddenWebScraper(
                                 buffer.readByteArray(toRead)
                             }
                             HttpFetchResult(String(bytes, charset), isHtml = true, allowWebViewFallback = true)
-                        }
+                        } }.getOrNull()
                         if (cont.isActive) cont.resume(res)
                     }
                 })
@@ -367,6 +416,8 @@ class HiddenWebScraper(
             val body = doc.body() ?: return null
             // Meta-Daten vor dem Aufraeumen lesen: Logo im Kopfbereich und JSON-LD-Skripte werden gleich entfernt
             val meta = SourceMetaExtractor.fromHtml(doc)
+            // Links derselben Website vor dem Aufraeumen sammeln (Navigation und Seitenleisten fuehren zu Unterseiten)
+            val links = sameSiteLinks(doc, url)
             body.select(JSOUP_REMOVE_SELECTOR).remove()
 
             var bestEl: Element = body
@@ -400,7 +451,7 @@ class HiddenWebScraper(
             }
 
             val rawText = if (blocks.isNotEmpty()) blocks.joinToString("\n") else bestEl.text()
-            val clean = rawText.replace(MULTI_NEWLINE_REGEX, "\n\n").trim().take(14_000)
+            val clean = rawText.replace(MULTI_NEWLINE_REGEX, "\n\n").trim().take(maxPageChars)
             if (clean.length < 220) return null
 
             val title = SourceMetaExtractor.cleanTitle(
@@ -412,9 +463,35 @@ class HiddenWebScraper(
                 title = title,
                 cleanText = clean,
                 sourceType = SourceType.WEB,
-                meta = meta
+                meta = meta,
+                links = links
             )
         }.getOrNull()
+    }
+
+    /** Hoechstens so viele Zeichen Text je Seite; lange Antworten lesen ganze Seiten. */
+    @Volatile var maxPageChars: Int = 14_000
+
+    /**
+     * Links auf derselben Website mit Linktext (ohne Sprungmarken, Dateien, Anmelde-, Bearbeiten- und Suchseiten),
+     * hoechstens 300.
+     */
+    private fun sameSiteLinks(doc: org.jsoup.nodes.Document, pageUrl: String): List<Pair<String, String>> {
+        val host = runCatching { URI(pageUrl).host }.getOrNull() ?: return emptyList()
+        val out = LinkedHashMap<String, String>()
+        for (a in doc.select("a[href]")) {
+            val href = a.attr("abs:href").substringBefore('#').trim()
+            if (href.isEmpty() || href == pageUrl || !href.startsWith("http")) continue
+            val uri = runCatching { URI(href) }.getOrNull() ?: continue
+            if (uri.host != host) continue
+            val path = uri.path.orEmpty().lowercase()
+            if (skipPageExtensions.any { path.endsWith(it) } || LINK_JUNK.containsMatchIn(href.lowercase())) continue
+            val text = a.text().replace(WHITESPACE_REGEX, " ").trim()
+            if (text.length !in 2..100) continue
+            if (href !in out) out[href] = text
+            if (out.size >= 300) break
+        }
+        return out.toList()
     }
 
     private fun unwrapJsString(raw: String): String {
@@ -438,7 +515,14 @@ class HiddenWebScraper(
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Mobile Safari/537.36"
         private const val MAX_HTML_BYTES = 1_500_000L
+        private const val PAGE_TIMEOUT_MS = 45_000L
         private const val BLOCK_SELECTOR = "h1, h2, h3, p, li, td"
+        /** Links, die zu keinem Inhalt fuehren: Anmeldung, Bearbeiten, Suche, Teilen, Feeds, Spezialseiten. */
+        private val LINK_JUNK = Regex("/(?:login|log-in|signin|sign-in|signup|sign-up|register|logout|search|share|feed|rss|wp-json|" +
+            "wp-admin|tag|tags|author|cart|checkout|account|privacy|impressum|datenschutz|cookies?|terms|tos|legal|eula|disclaimer|agb)(?:[-_/?.]|$)|" +
+            "[?&](?:action|q|s|share|replytocom|oldid|diff)=|/(?:special|spezial|help|hilfe|project|user|benutzer|file|datei|template|vorlage|talk|diskussion)(?:_talk)?:|" +
+            "[?&/]edit(?:[/?=&]|$)")
+
         private const val JSOUP_REMOVE_SELECTOR =
             "script, style, noscript, iframe, svg, canvas, nav, footer, header, aside, form, button, input, select, template, " +
                 "[hidden], [aria-hidden=true], [role=navigation], [role=banner], [role=complementary], " +

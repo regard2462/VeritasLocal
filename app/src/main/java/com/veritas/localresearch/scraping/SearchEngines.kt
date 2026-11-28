@@ -15,10 +15,12 @@ import java.net.URLEncoder
 
 /**
  * Websuchen ohne Konto. Jede Suchmaschine hat ein eigenes kleines Budget pro Minute und pausiert lange,
- * sobald sie drosselt oder einen Menschen sehen will (429, 403, 503, Captcha-Seite). Gesperrte Suchmaschinen
- * werden nicht ueber einen Browser erneut gefragt: die eigene Adresse soll nie gesperrt werden.
- * Suchmaschinen, die schon eine einfache Anfrage mit einem Captcha beantworten (Brave, Qwant, Ecosia, Yahoo),
- * gibt es hier nicht.
+ * sobald sie drosselt oder einen Menschen sehen will (429, 403, 503, Captcha-Seite). Die App fragt eine gesperrte
+ * Suchmaschine nicht selbststaendig ueber einen Browser erneut: die eigene Adresse soll nie gesperrt werden. Auf
+ * Android kann der Nutzer den Test selbst in einem sichtbaren Browserfenster loesen; danach sucht die App bei dieser
+ * Suchmaschine ueber den eingebauten Browser mit denselben Cookies weiter.
+ * Suchmaschinen, die schon eine einfache Anfrage mit einem Captcha oder einer Sperre beantworten (Brave, Ecosia,
+ * Yahoo, Yandex) oder nur per JavaScript Treffer zeigen (Qwant), gibt es hier nicht.
  */
 enum class SearchEngine(
     val id: String,
@@ -32,10 +34,16 @@ enum class SearchEngine(
     BING("bing", "Bing", 8, true, "eng_bing"),
     STARTPAGE("startpage", "Startpage", 4, true, "eng_startpage"),
     MOJEEK("mojeek", "Mojeek", 4, true, "eng_mojeek"),
+    SEZNAM("seznam", "Seznam", 4, true, "eng_seznam"),
+    NAVER("naver", "Naver", 4, true, "eng_naver"),
+    MWMBL("mwmbl", "Mwmbl", 4, true, "eng_mwmbl"),
     MARGINALIA("marginalia", "Marginalia", 3, false, "eng_marginalia"),
     SEARXNG("searxng", "SearXNG", 20, false, "eng_searxng");
 
     val displayName: String get() = if (this == SEARXNG) tr("eng_searxng_name") else baseName
+
+    /** Antwortet mit HTML (und kann deshalb nach einem selbst geloesten Test ueber den Browser gefragt werden). */
+    val isHtml: Boolean get() = this != MARGINALIA && this != SEARXNG && this != MWMBL
     val note: String get() = tr(noteKey)
 
     /** [lang]: Sprache der Frage; Suchmaschinen mit Regions- oder Sprachparameter liefern dann Treffer in dieser Sprache. */
@@ -46,6 +54,10 @@ enum class SearchEngine(
             BING -> "https://www.bing.com/search?q=$q" + (lang?.let { "&setlang=${it.code}&cc=${it.bingCountry}" } ?: "")
             STARTPAGE -> "https://www.startpage.com/do/search?q=$q"
             MOJEEK -> "https://www.mojeek.com/search?q=$q"
+            SEZNAM -> "https://search.seznam.cz/?q=$q"
+            NAVER -> "https://search.naver.com/search.naver?where=web&query=$q"
+            // Englischer Index: bei Fragen in anderen Sprachen nicht fragen
+            MWMBL -> if (lang != null && lang.code != "en") null else "https://api.mwmbl.org/search?s=$q"
             MARGINALIA -> "https://api.marginalia.nu/public/search/${q.replace("+", "%20")}?count=10"
             SEARXNG -> {
                 val base = searxngBase.trim().trimEnd('/')
@@ -75,7 +87,8 @@ enum class SearchEngine(
             BING -> {
                 val doc = Jsoup.parse(body, pageUrl)
                 for (li in doc.select("li.b_algo")) {
-                    val a = li.selectFirst("h2 a") ?: continue
+                    // Titel im Link (a > h2) oder Link im Titel (h2 > a)
+                    val a = li.selectFirst("h2 a") ?: li.selectFirst("a:has(h2)") ?: continue
                     add(resolveBing(a.attr("abs:href")), a.text(), li.selectFirst(".b_caption p, p")?.text().orEmpty())
                 }
             }
@@ -93,6 +106,37 @@ enum class SearchEngine(
                     add(a.attr("abs:href"), a.text(), li.selectFirst("p.s")?.text().orEmpty())
                 }
             }
+            SEZNAM -> {
+                val doc = Jsoup.parse(body, pageUrl)
+                for (a in doc.select("a[data-e-a=heading][href^=http]")) {
+                    // Ergebnisblock: naechster Vorfahre mit Kennung; Snippet ist sein Text ohne Titel und Adresszeile
+                    val block = generateSequence(a.parent()) { it.parent() }.take(6).firstOrNull { it.hasAttr("data-e-b-n") }
+                    val ref = block?.selectFirst("a[data-e-a=reference]")?.text().orEmpty()
+                    val snippet = block?.text().orEmpty().replace(a.text(), "").replace(ref, "").trim()
+                    add(a.attr("href"), a.text(), snippet)
+                }
+            }
+            NAVER -> {
+                val doc = Jsoup.parse(body, pageUrl)
+                // Je Treffer mehrere Links auf dasselbe Ziel: Datum, Titel, Beschreibung
+                val byUrl = LinkedHashMap<String, MutableList<String>>()
+                for (a in doc.select("a[data-nlog-area^=urB_][data-nlog-area$=.w.link][href^=http]")) {
+                    val text = a.text().replace(NAVER_NEW_WINDOW, "").trim()
+                    if (text.isBlank() || NAVER_DATE.matches(text)) continue
+                    byUrl.getOrPut(a.attr("href")) { ArrayList() }.add(text)
+                }
+                for ((url, texts) in byUrl) add(url, texts.first(), texts.drop(1).joinToString(" "))
+            }
+            MWMBL -> {
+                val arr = runCatching { JSON.parseToJsonElement(body).jsonArray }.getOrNull() ?: return out
+                fun joined(o: JsonObject, k: String) = runCatching {
+                    o[k]!!.jsonArray.joinToString("") { it.jsonObject["value"]!!.jsonPrimitive.content }
+                }.getOrDefault("")
+                for (r in arr) {
+                    val o = r as? JsonObject ?: continue
+                    add(runCatching { o["url"]!!.jsonPrimitive.content }.getOrDefault(""), joined(o, "title"), joined(o, "extract"))
+                }
+            }
             MARGINALIA, SEARXNG -> {
                 val root = runCatching { JSON.parseToJsonElement(body).jsonObject }.getOrNull() ?: return out
                 val results = runCatching { root["results"]!!.jsonArray }.getOrNull() ?: return out
@@ -108,8 +152,25 @@ enum class SearchEngine(
 
     companion object {
         private val JSON = Json { ignoreUnknownKeys = true }
+        /** Versteckter Hinweis "öffnet in neuem Fenster" in Naver-Links. */
+        private val NAVER_NEW_WINDOW = Regex("새 창 열림")
+        private val NAVER_DATE = Regex("\\d{4}\\.\\d{2}\\.\\d{2}\\.?")
 
         fun byId(id: String): SearchEngine? = entries.firstOrNull { it.id == id }
+
+        /**
+         * Weiche Sperre: manche Suchmaschinen werten bei automatischen Anfragen nur das erste Wort aus. Bei mindestens
+         * zwei Suchwoertern muss ein Drittel der Treffer zwei davon in Titel oder Beschreibung nennen.
+         */
+        fun looksDegraded(query: String, results: List<SearchResultItem>): Boolean {
+            val words = query.lowercase().split(Regex("[^\\p{L}\\p{N}]+")).filter { it.length >= 3 }.distinct()
+            if (words.size < 2 || results.size < 3) return false
+            val good = results.count { r ->
+                val text = (r.title + " " + r.snippet + " " + r.url).lowercase()
+                words.count { it in text } >= 2
+            }
+            return good * 3 < results.size
+        }
 
         /** Sperrt die Suchmaschine oder will sie einen Menschen sehen? Nur relevant, wenn nichts gefunden wurde. */
         fun isChallenge(code: Int, body: String): Boolean {
@@ -195,4 +256,12 @@ class SearchEngineGovernor(private val prefs: SharedPreferences) {
     fun clearCooldown(engine: SearchEngine) {
         prefs.edit().remove("cool_${engine.id}").remove("streak_${engine.id}").apply()
     }
+
+    /** Der Nutzer hat den Test selbst geloest: Pause aufheben, 24 Stunden lang ueber den eingebauten Browser suchen. */
+    fun markSolved(engine: SearchEngine, now: Long = System.currentTimeMillis()) {
+        prefs.edit().remove("cool_${engine.id}").remove("streak_${engine.id}")
+            .putLong("browser_${engine.id}", now + 24 * 3_600_000L).apply()
+    }
+
+    fun viaBrowser(engine: SearchEngine, now: Long = System.currentTimeMillis()) = prefs.getLong("browser_${engine.id}", 0L) > now
 }

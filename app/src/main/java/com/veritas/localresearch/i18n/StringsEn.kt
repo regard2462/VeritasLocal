@@ -77,6 +77,14 @@ internal val EN: Map<String, String> = mapOf(
     "eng_bing" to "Large index, many PDFs and official pages",
     "eng_startpage" to "Google results without tracking",
     "eng_mojeek" to "Own index, often shows a captcha for VPN addresses",
+    "eng_seznam" to "Czech engine with its own index, good results in many languages",
+    "eng_naver" to "Korean engine, also finds pages in other languages",
+    "eng_mwmbl" to "Open, community-built index, English questions only",
+    "captcha_hint" to "{0} wants to check that a person is searching. The search continues with the other engines.",
+    "captcha_solve" to "Solve it yourself",
+    "captcha_title" to "Check at {0}",
+    "captcha_info" to "Solve the test on the page. Then the app searches with {0} again.",
+    "captcha_done" to "Done",
     "eng_marginalia" to "Small, text-heavy web, public API key",
     "eng_searxng_name" to "Own SearXNG instance",
     "eng_searxng" to "JSON output must be enabled in the instance",
@@ -243,5 +251,11 @@ internal val EN: Map<String, String> = mapOf(
     "len_custom" to "Custom",
     "len_words" to "{0} words",
     "len_hint" to "Target about {0} words. Longer answers search more sources and take longer.",
-    "pages_one" to "1 page"
+    "pages_one" to "1 page",
+    "st_plan_paper" to "Stage 1: Research plan",
+    "d_plan_paper" to "Planning {0} chapters like a term paper…",
+    "chapter_n" to "Chapter {0}/{1}: {2}",
+    "len_missed" to "{0} of about {1} words: the sources found contained no further checked facts. More depth or a broader question finds more.",
+    "live_show" to "Watch live",
+    "live_hide" to "Hide live view"
 )

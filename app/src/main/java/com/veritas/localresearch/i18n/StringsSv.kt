@@ -74,6 +74,14 @@ internal val SV: Map<String, String> = mapOf(
     "eng_bing" to "Stort index, många PDF-filer och myndighetssidor",
     "eng_startpage" to "Google-resultat utan spårning",
     "eng_mojeek" to "Eget index, visar ofta captcha för VPN-adresser",
+    "eng_seznam" to "Tjeckisk sökmotor med eget index, bra träffar på många språk",
+    "eng_naver" to "Koreansk sökmotor, hittar även sidor på andra språk",
+    "eng_mwmbl" to "Öppet index byggt av communityn, bara engelska frågor",
+    "captcha_hint" to "{0} vill kontrollera att en människa söker. Sökningen fortsätter med de andra sökmotorerna.",
+    "captcha_solve" to "Lös själv",
+    "captcha_title" to "Kontroll hos {0}",
+    "captcha_info" to "Lös testet på sidan. Sedan söker appen med {0} igen.",
+    "captcha_done" to "Klar",
     "eng_marginalia" to "Litet, textrikt webb, offentlig API-nyckel",
     "eng_searxng_name" to "Egen SearXNG-instans",
     "eng_searxng" to "JSON-utdata måste vara aktiverat i instansen",
@@ -236,5 +244,11 @@ internal val SV: Map<String, String> = mapOf(
     "len_custom" to "Egen",
     "len_words" to "{0} ord",
     "len_hint" to "Cirka {0} ord. Längre svar söker i fler källor och tar längre tid.",
-    "pages_one" to "1 sida"
+    "pages_one" to "1 sida",
+    "st_plan_paper" to "Steg 1: forskningsplan",
+    "d_plan_paper" to "Planerar {0} kapitel som i en uppsats…",
+    "chapter_n" to "Kapitel {0}/{1}: {2}",
+    "len_missed" to "{0} av cirka {1} ord: de hittade källorna innehöll inga fler kontrollerade fakta. Mer djup eller en bredare fråga hittar mer.",
+    "live_show" to "Följ live",
+    "live_hide" to "Dölj livevyn"
 )

@@ -28,6 +28,13 @@ intlist ::= "[" ws (int (ws "," ws int)*)? ws "]"
 $PRIMITIVES
 """.trimIndent()
 
+    /** Rechercheplan einer langen Antwort: Kapitel mit Ueberschrift und eigenen Suchanfragen. */
+    val RESEARCH_PLAN: String = """
+root ::= "{" ws "\"chapters\":" ws "[" ws chapter (ws "," ws chapter)* ws "]" ws "," ws "\"en_query\":" ws string ws "}"
+chapter ::= "{" ws "\"title\":" ws string "," ws "\"queries\":" ws stringlist ws "}"
+$PRIMITIVES
+""".trimIndent()
+
     val QUESTIONS: String = """
 root ::= "{" ws "\"questions\":" ws stringlist ws "}"
 $PRIMITIVES

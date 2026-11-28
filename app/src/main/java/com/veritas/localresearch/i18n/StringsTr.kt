@@ -74,6 +74,14 @@ internal val TR: Map<String, String> = mapOf(
     "eng_bing" to "Geniş dizin, çok sayıda PDF ve resmî sayfa",
     "eng_startpage" to "İzleme olmadan Google sonuçları",
     "eng_mojeek" to "Kendi dizini, VPN adreslerinde sık sık Captcha gösterir",
+    "eng_seznam" to "Kendi dizini olan Çek arama motoru, birçok dilde iyi sonuçlar",
+    "eng_naver" to "Kore arama motoru, başka dillerdeki sayfaları da bulur",
+    "eng_mwmbl" to "Topluluğun oluşturduğu açık dizin, yalnızca İngilizce sorular",
+    "captcha_hint" to "{0}, arama yapanın insan olduğunu doğrulamak istiyor. Arama diğer motorlarla sürüyor.",
+    "captcha_solve" to "Kendin çöz",
+    "captcha_title" to "{0} doğrulaması",
+    "captcha_info" to "Sayfadaki testi çöz. Ardından uygulama yeniden {0} ile arar.",
+    "captcha_done" to "Tamam",
     "eng_marginalia" to "Küçük, metin ağırlıklı web, herkese açık API anahtarı",
     "eng_searxng_name" to "Kendi SearXNG sunucunuz",
     "eng_searxng" to "Sunucuda JSON çıktısı etkin olmalıdır",
@@ -236,5 +244,11 @@ internal val TR: Map<String, String> = mapOf(
     "len_custom" to "Özel",
     "len_words" to "{0} kelime",
     "len_hint" to "Yaklaşık {0} kelime. Daha uzun yanıtlar daha fazla kaynak tarar ve daha uzun sürer.",
-    "pages_one" to "1 sayfa"
+    "pages_one" to "1 sayfa",
+    "st_plan_paper" to "Aşama 1: Araştırma planı",
+    "d_plan_paper" to "Bir ödev gibi {0} bölüm planlanıyor…",
+    "chapter_n" to "Bölüm {0}/{1}: {2}",
+    "len_missed" to "Yaklaşık {1} kelimenin {0} kelimesi: Bulunan kaynaklarda başka doğrulanmış bilgi yoktu. Daha fazla derinlik veya daha geniş bir soru daha fazlasını bulur.",
+    "live_show" to "Canlı izle",
+    "live_hide" to "Canlı görünümü gizle"
 )

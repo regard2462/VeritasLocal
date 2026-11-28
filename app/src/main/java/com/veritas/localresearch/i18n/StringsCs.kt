@@ -74,6 +74,14 @@ internal val CS: Map<String, String> = mapOf(
     "eng_bing" to "Velký index, mnoho PDF a úředních stránek",
     "eng_startpage" to "Výsledky Google bez sledování",
     "eng_mojeek" to "Vlastní index, u adres VPN často zobrazí captcha",
+    "eng_seznam" to "Český vyhledávač s vlastním indexem, dobré výsledky v mnoha jazycích",
+    "eng_naver" to "Korejský vyhledávač, najde i stránky v jiných jazycích",
+    "eng_mwmbl" to "Otevřený komunitní index, jen pro anglické dotazy",
+    "captcha_hint" to "{0} chce ověřit, že hledá člověk. Hledání pokračuje s ostatními vyhledávači.",
+    "captcha_solve" to "Vyřešit sám",
+    "captcha_title" to "Ověření u {0}",
+    "captcha_info" to "Vyřešte test na stránce. Pak aplikace bude znovu hledat přes {0}.",
+    "captcha_done" to "Hotovo",
     "eng_marginalia" to "Malý textový web, veřejný klíč API",
     "eng_searxng_name" to "Vlastní instance SearXNG",
     "eng_searxng" to "V instanci musí být zapnutý výstup JSON",
@@ -236,5 +244,11 @@ internal val CS: Map<String, String> = mapOf(
     "len_custom" to "Vlastní",
     "len_words" to "Slova: {0}",
     "len_hint" to "Přibližně {0} slov. Delší odpovědi prohledávají více zdrojů a trvají déle.",
-    "pages_one" to "1 strana"
+    "pages_one" to "1 strana",
+    "st_plan_paper" to "Fáze 1: plán rešerše",
+    "d_plan_paper" to "Plánování {0} kapitol jako u seminární práce…",
+    "chapter_n" to "Kapitola {0}/{1}: {2}",
+    "len_missed" to "{0} z přibližně {1} slov: nalezené zdroje neobsahovaly další ověřená fakta. Větší hloubka nebo širší otázka najde víc.",
+    "live_show" to "Sledovat živě",
+    "live_hide" to "Skrýt živý přehled"
 )

@@ -74,6 +74,14 @@ internal val ZH: Map<String, String> = mapOf(
     "eng_bing" to "索引庞大，含大量 PDF 和官方页面",
     "eng_startpage" to "无跟踪的 Google 搜索结果",
     "eng_mojeek" to "自有索引，VPN 地址常出现 Captcha",
+    "eng_seznam" to "捷克搜索引擎，自有索引，多种语言结果都不错",
+    "eng_naver" to "韩国搜索引擎，也能找到其他语言的网页",
+    "eng_mwmbl" to "社区共建的开放索引，仅用于英文问题",
+    "captcha_hint" to "{0} 想确认是真人在搜索。搜索会继续使用其他搜索引擎。",
+    "captcha_solve" to "自己完成验证",
+    "captcha_title" to "{0} 的验证",
+    "captcha_info" to "请在页面上完成验证。之后应用会重新使用 {0} 搜索。",
+    "captcha_done" to "完成",
     "eng_marginalia" to "小而以文字为主的网络，公共 API 密钥",
     "eng_searxng_name" to "自建 SearXNG 实例",
     "eng_searxng" to "实例中必须启用 JSON 输出",
@@ -236,5 +244,11 @@ internal val ZH: Map<String, String> = mapOf(
     "len_custom" to "自定义",
     "len_words" to "{0} 字",
     "len_hint" to "约 {0} 字。回答越长，检索的来源越多，耗时也越长。",
-    "pages_one" to "1 页"
+    "pages_one" to "1 页",
+    "st_plan_paper" to "第 1 阶段：研究计划",
+    "d_plan_paper" to "正在像写论文一样规划 {0} 个章节…",
+    "chapter_n" to "第 {0}/{1} 章：{2}",
+    "len_missed" to "约 {1} 字中的 {0} 字：找到的来源中没有更多经过核验的事实。更深的研究或更宽泛的问题能找到更多。",
+    "live_show" to "实时查看",
+    "live_hide" to "隐藏实时视图"
 )
